@@ -1,6 +1,18 @@
-streamlit
-matplotlib
-numpy
-pandas
-stable-baselines3
+# Core libraries
+streamlit==1.32.2
+numpy==1.24.4
+pandas==2.2.2
+matplotlib==3.7.1
+
+# RL Frameworks
 gymnasium==0.28.1
+stable-baselines3==1.7.0
+
+# PyTorch (required for stable-baselines3)
+torch==1.13.1
+
+# Visualization (optional but recommended for future upgrades)
+altair==5.0.1
+
+# To ensure compatibility
+typing-extensions==4.5.0
