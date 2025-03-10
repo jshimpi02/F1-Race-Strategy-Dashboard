@@ -119,7 +119,9 @@ if st.sidebar.button("Run RL Race Simulation 🚀"):
     st.subheader(f"RL Race Simulation: {selected_driver} for {selected_team}")
     st.markdown("---")
 
-    model = PPO.load("ppo_f1_pit_agent")
+    MODEL_PATH = "models/ppo_f1_pit_agent.zip"
+    model = PPO.load(MODEL_PATH)
+
     player_tire = selected_tire
     player_total_time = 0
     player_lap_times = []
