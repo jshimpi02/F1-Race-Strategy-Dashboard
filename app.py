@@ -48,9 +48,7 @@ selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options
 class F1PitStopEnv(gym.Env):
     def __init__(self):
         super(F1PitStopEnv, self).__init__()
-        # Observations: lap number, tire degradation, weather (encoded), grip
         self.observation_space = spaces.Box(low=0, high=100, shape=(4,), dtype=np.float32)
-        # Actions: 0 - No pit, 1 - Pit and change tire
         self.action_space = spaces.Discrete(2)
         self.reset()
 
@@ -75,12 +73,11 @@ class F1PitStopEnv(gym.Env):
     def step(self, action):
         reward = 0
         pit_penalty = 0
-        # Random weather
         if self.lap % 10 == 0:
             self.weather = np.random.choice(["Clear", "Light Rain", "Heavy Rain"], p=[0.5, 0.3, 0.2])
         self.grip = {"Clear": 1.0, "Light Rain": 0.8, "Heavy Rain": 0.6}[self.weather]
 
-        if action == 1:  # Pit
+        if action == 1:
             pit_penalty = pit_stop_time
             self.tire_wear = 0
         else:
@@ -89,9 +86,7 @@ class F1PitStopEnv(gym.Env):
         lap_time = 100 + (self.tire_wear * self.lap) + (1 - self.grip) * 20 + pit_penalty
         self.total_time += lap_time
 
-        # Reward: minimize lap_time, but don't overuse tires
         reward = -lap_time
-
         self.lap += 1
         if self.lap > race_length:
             self.done = True
@@ -139,6 +134,9 @@ if st.sidebar.button("Run RL Race Simulation 🚀"):
 
     leaderboard = []
     dynamic_weather = []
+    tire_wear_history = []
+    fuel_load_history = []
+    fuel_load = 100  # starting fuel percentage
 
     for lap in range(1, race_length + 1):
         if selected_weather == "Dynamic Weather":
@@ -164,16 +162,37 @@ if st.sidebar.button("Run RL Race Simulation 🚀"):
         player_total_time += lap_time
         player_lap_times.append(lap_time)
 
-    # Visualization
+        # Track tire wear and fuel
+        tire_wear_history.append(lap * final_degradation)
+        fuel_load -= 100 / race_length
+        fuel_load_history.append(fuel_load)
+
+    # === Visualization ===
     st.write("### RL Agent Lap Times")
     laps = np.arange(1, race_length + 1)
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(laps, player_lap_times, label=f'{selected_driver} (RL Agent)', linewidth=2, color='blue')
-    ax.scatter(pit_laps, [player_lap_times[i - 1] for i in pit_laps], color='red', label='Pit Stops', zorder=5)
-    ax.set_xlabel("Lap")
-    ax.set_ylabel("Lap Time (seconds)")
-    ax.set_title("RL Agent Lap Times with Pit Stops")
-    ax.legend()
-    st.pyplot(fig)
+    fig1, ax1 = plt.subplots(figsize=(14, 6))
+    ax1.plot(laps, player_lap_times, label=f'{selected_driver} (RL Agent)', linewidth=2, color='blue')
+    ax1.scatter(pit_laps, [player_lap_times[i - 1] for i in pit_laps], color='red', label='Pit Stops', zorder=5)
+    ax1.set_xlabel("Lap")
+    ax1.set_ylabel("Lap Time (seconds)")
+    ax1.set_title("RL Agent Lap Times with Pit Stops")
+    ax1.legend()
+    st.pyplot(fig1)
+
+    st.write("### Tire Wear Over Race")
+    fig2, ax2 = plt.subplots(figsize=(14, 6))
+    ax2.plot(laps, tire_wear_history, color='orange')
+    ax2.set_xlabel("Lap")
+    ax2.set_ylabel("Tire Wear")
+    ax2.set_title("Tire Wear Progression During the Race")
+    st.pyplot(fig2)
+
+    st.write("### Fuel Load Over Race")
+    fig3, ax3 = plt.subplots(figsize=(14, 6))
+    ax3.plot(laps, fuel_load_history, color='green')
+    ax3.set_xlabel("Lap")
+    ax3.set_ylabel("Fuel Remaining (%)")
+    ax3.set_title("Fuel Load Progression During the Race")
+    st.pyplot(fig3)
 
     st.success("RL Race Complete! Ready for next simulation 🏁")
