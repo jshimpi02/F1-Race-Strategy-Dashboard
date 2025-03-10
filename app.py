@@ -22,6 +22,20 @@ selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team
 degradation_base = teams[selected_team]["degradation_factor"]
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
+# ================================
+# 🛞 TIRE COMPOUND SELECTION
+# ================================
+st.sidebar.header("🛞 Tire Compound Selection")
+
+tires = {
+    "Soft": 0.40,
+    "Medium": 0.25,
+    "Hard": 0.15
+}
+
+selected_tire = st.sidebar.radio("Select Tire Compound", list(tires.keys()))
+tire_degradation = tires[selected_tire]
+
 # === SIMULATION SETTINGS ===
 st.sidebar.header("⚙️ Simulation Settings")
 race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
