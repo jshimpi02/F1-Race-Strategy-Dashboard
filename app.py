@@ -1,3 +1,5 @@
+import os
+os.environ["PYTORCH_JIT"] = "0"
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
