@@ -1,5 +1,6 @@
 import os
 os.environ["PYTORCH_JIT"] = "0"
+
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +12,6 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 import gymnasium as gym
 from gymnasium import spaces
-
 
 # === PHASE 7: F1 Race Strategy Simulator ===
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
@@ -75,10 +75,10 @@ class F1PitStopEnv(gym.Env):
         ], dtype=np.float32)
 
     def step(self, action):
-        reward = 0
         pit_penalty = 0
         if self.lap % 10 == 0:
             self.weather = np.random.choice(["Clear", "Light Rain", "Heavy Rain"], p=[0.5, 0.3, 0.2])
+
         self.grip = {"Clear": 1.0, "Light Rain": 0.8, "Heavy Rain": 0.6}[self.weather]
 
         if action == 1:
@@ -92,10 +92,11 @@ class F1PitStopEnv(gym.Env):
 
         reward = -lap_time
         self.lap += 1
-        if self.lap > race_length:
-            self.done = True
 
-        return self._get_obs(), reward, self.done, {}
+        terminated = self.lap > race_length
+        truncated = False
+
+        return self._get_obs(), reward, terminated, truncated, {}
 
 # === Train the RL Agent ===
 st.sidebar.markdown("---")
@@ -138,7 +139,6 @@ if st.sidebar.button("Run RL Race Simulation 🚀"):
     }
     final_degradation = degradation_base + tire_degradation[player_tire]
 
-    leaderboard = []
     dynamic_weather = []
     tire_wear_history = []
     fuel_load_history = []
