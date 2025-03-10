@@ -7,8 +7,9 @@ import random
 # RL Imports
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
+
 
 # === PHASE 7: F1 Race Strategy Simulator ===
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
@@ -52,14 +53,15 @@ class F1PitStopEnv(gym.Env):
         self.action_space = spaces.Discrete(2)
         self.reset()
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
         self.lap = 1
         self.tire_wear = 0
         self.weather = "Clear"
         self.grip = 1.0
         self.total_time = 0
         self.done = False
-        return self._get_obs()
+        return self._get_obs(), {}
 
     def _get_obs(self):
         weather_map = {"Clear": 0, "Light Rain": 1, "Heavy Rain": 2}

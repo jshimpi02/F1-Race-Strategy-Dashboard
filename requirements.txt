@@ -1,4 +1,6 @@
 streamlit
 matplotlib
 numpy
+pandas
 stable-baselines3
+gymnasium==0.28.1
