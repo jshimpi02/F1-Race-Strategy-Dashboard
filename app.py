@@ -22,20 +22,6 @@ selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team
 degradation_base = teams[selected_team]["degradation_factor"]
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
-# ================================
-# 🛞 TIRE COMPOUND SELECTION
-# ================================
-st.sidebar.header("🛞 Tire Compound Selection")
-
-tires = {
-    "Soft": 0.40,
-    "Medium": 0.25,
-    "Hard": 0.15
-}
-
-selected_tire = st.sidebar.radio("Select Tire Compound", list(tires.keys()))
-tire_degradation = tires[selected_tire]
-
 # === SIMULATION SETTINGS ===
 st.sidebar.header("⚙️ Simulation Settings")
 race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
@@ -47,16 +33,21 @@ st.sidebar.header("🌦️ Weather Settings")
 weather_types = ["Clear", "Light Rain", "Heavy Rain", "Dynamic Weather"]
 selected_weather = st.sidebar.selectbox("Select Weather", weather_types)
 
+# === TIRE COMPOUND SELECTION ===
+st.sidebar.header("🛞 Tire Compound Selection")
+tire_options = {"Soft": 0.40, "Medium": 0.25, "Hard": 0.15}
+selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options.keys()))
+
 # === RL PLACEHOLDER AGENT ===
-def rl_strategy(current_lap, grip_level, weather):
+def rl_strategy(current_lap, grip_level, weather, current_tire):
     """
-    Placeholder RL strategy for pit decisions.
+    Simplified RL strategy for tire decisions.
     """
-    if weather == "Heavy Rain" and current_lap % 10 == 0:
+    if weather == "Heavy Rain":
         return "Wets"
-    if weather == "Light Rain" and current_lap % 15 == 0:
+    if weather == "Light Rain":
         return "Intermediates"
-    if weather == "Clear" and current_lap % 20 == 0:
+    if current_lap % 20 == 0 and current_tire != "Soft":
         return "Soft"
     return None
 
@@ -65,62 +56,71 @@ if st.sidebar.button("Run Race Simulation 🚀"):
     st.subheader(f"Race Simulation: {selected_driver} for {selected_team}")
     st.markdown("---")
 
-    final_degradation = degradation_base
+    # === Initial Degradation ===
+    player_tire = selected_tire
+    player_total_time = 0
+    player_lap_times = []
+    pit_laps = []
 
-    # Initialize Drivers
+    tire_degradation = {
+        "Soft": 0.40,
+        "Medium": 0.25,
+        "Hard": 0.15,
+        "Intermediates": 0.30,
+        "Wets": 0.35
+    }
+    final_degradation = degradation_base + tire_degradation[player_tire]
+
+    # === Opponent Initialization ===
     opponents = []
     for i in range(num_opponents):
+        opponent_tire = random.choice(list(tire_degradation.keys()))
         opponents.append({
             "name": f"Opponent {i+1}",
-            "degradation_rate": np.random.uniform(0.15, 0.35),
+            "degradation_rate": degradation_base + tire_degradation[opponent_tire],
             "lap_times": [],
             "pit_laps": [],
-            "tire": "Soft",
+            "tire": opponent_tire,
             "total_time": 0,
             "current_lap_time": 100,
             "status": "Running"
         })
 
-    # Player initialization
-    player_total_time = 0
-    player_lap_times = []
-    player_tire = "Soft"
-    pit_laps = []
     leaderboard = []
     dynamic_weather = []
     safety_car_laps = []
 
+    # === Race Loop ===
     for lap in range(1, race_length + 1):
-        # Dynamic Weather Logic
+
+        # === Dynamic Weather ===
         if selected_weather == "Dynamic Weather":
-            if lap % 15 == 0:
+            if lap == 1 or lap % 15 == 0:
                 current_weather = np.random.choice(["Clear", "Light Rain", "Heavy Rain"], p=[0.5, 0.3, 0.2])
             dynamic_weather.append(current_weather)
         else:
             current_weather = selected_weather
             dynamic_weather.append(current_weather)
 
-        # Grip Level
         grip_level = {"Clear": 1.0, "Light Rain": 0.8, "Heavy Rain": 0.6}[current_weather]
         grip_penalty = (1 - grip_level) * 20
 
-        # Safety Car Logic
+        # === Safety Car Logic ===
         if lap % 20 == 0:
             safety_car_laps.append(lap)
-            grip_penalty += 10  # Safety car slows everyone
+            grip_penalty += 10
 
-        # Random Incident (Crash/Mechanical)
-        crash_chance = random.random()
-        if crash_chance < 0.01:
-            opponents[random.randint(0, num_opponents - 1)]["status"] = "Retired"
+        # === Random Incidents ===
+        for opponent in opponents:
+            if opponent["status"] == "Running" and random.random() < 0.01:
+                opponent["status"] = "Retired"
 
-        # === Player RL Tire Strategy ===
-        new_tire = rl_strategy(lap, grip_level, current_weather)
-        if new_tire:
+        # === Player RL Tire Decision ===
+        new_tire = rl_strategy(lap, grip_level, current_weather, player_tire)
+        if new_tire and new_tire != player_tire:
             player_tire = new_tire
             pit_laps.append(lap)
-            tire_degradation = {"Soft": 0.4, "Medium": 0.25, "Hard": 0.15, "Intermediates": 0.2, "Wets": 0.3}
-            final_degradation = degradation_base + tire_degradation.get(player_tire, 0.3)
+            final_degradation = degradation_base + tire_degradation[player_tire]
             lap_time = 100 + pit_stop_time + grip_penalty
         else:
             lap_time = 100 + (lap * final_degradation) + grip_penalty
@@ -133,11 +133,11 @@ if st.sidebar.button("Run Race Simulation 🚀"):
             if opponent["status"] == "Retired":
                 continue
 
-            # Opponent RL/Random Pit Strategy (Simplified)
-            if lap % random.choice([12, 15, 20]) == 0:
-                opponent["tire"] = random.choice(["Soft", "Medium", "Hard", "Intermediates", "Wets"])
+            if lap % random.choice([15, 18, 22]) == 0:
+                new_tire = random.choice(list(tire_degradation.keys()))
+                opponent["tire"] = new_tire
+                opponent["degradation_rate"] = degradation_base + tire_degradation[new_tire]
                 opponent["pit_laps"].append(lap)
-                opponent["degradation_rate"] = np.random.uniform(0.15, 0.4)
                 lap_time = 100 + pit_stop_time + grip_penalty
             else:
                 lap_time = 100 + (lap * opponent["degradation_rate"]) + grip_penalty
@@ -145,7 +145,7 @@ if st.sidebar.button("Run Race Simulation 🚀"):
             opponent["total_time"] += lap_time
             opponent["lap_times"].append(lap_time)
 
-        # Leaderboard each lap
+        # === Leaderboard ===
         drivers = [{"name": selected_driver, "total_time": player_total_time}] + [
             {"name": o["name"], "total_time": o["total_time"]} for o in opponents if o["status"] == "Running"
         ]
@@ -169,23 +169,21 @@ if st.sidebar.button("Run Race Simulation 🚀"):
     ax.legend()
     st.pyplot(fig)
 
-    # Leaderboard Table
     st.write("### Leaderboard (Lap by Lap)")
     leaderboard_df = pd.DataFrame(leaderboard, columns=[f'P{i+1}' for i in range(len(leaderboard[0]))])
     leaderboard_df.index.name = 'Lap'
     st.dataframe(leaderboard_df)
 
-    # Safety Car + Weather Laps
     st.write("### Safety Car Laps")
     st.write(safety_car_laps if safety_car_laps else "None")
 
     if selected_weather == "Dynamic Weather":
-        st.write("### Weather Grip Level Per Lap")
+        st.write("### Dynamic Weather Conditions")
         fig2, ax2 = plt.subplots(figsize=(12, 4))
         ax2.plot(range(1, race_length + 1), [1.0 if w == "Clear" else 0.8 if w == "Light Rain" else 0.6 for w in dynamic_weather], marker='o')
         ax2.set_xlabel("Lap")
         ax2.set_ylabel("Grip Level")
-        ax2.set_title("Dynamic Weather Conditions")
+        ax2.set_title("Grip Level Over Laps")
         st.pyplot(fig2)
 
     st.success("Race Complete! Ready for next simulation 🏁")
