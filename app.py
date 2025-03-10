@@ -4,9 +4,15 @@ import numpy as np
 import pandas as pd
 import random
 
+# RL Imports
+from stable_baselines3 import PPO
+from stable_baselines3.common.envs import DummyVecEnv
+import gym
+from gym import spaces
+
 # === PHASE 7: F1 Race Strategy Simulator ===
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
-st.title("🏎️ F1 Race Strategy Simulator - RL + Dynamic Weather + Incidents")
+st.title("🏎️ F1 Race Strategy Simulator - RL Agent + Dynamic Weather + Incidents")
 st.markdown("---")
 
 # === TEAM & DRIVER SELECTION ===
@@ -38,21 +44,85 @@ st.sidebar.header("🛞 Tire Compound Selection")
 tire_options = {"Soft": 0.40, "Medium": 0.25, "Hard": 0.15}
 selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options.keys()))
 
-# === RL PLACEHOLDER AGENT ===
-def rl_strategy(current_lap, grip_level, weather, current_tire):
-    if weather == "Heavy Rain":
-        return "Wets"
-    if weather == "Light Rain":
-        return "Intermediates"
-    if current_lap % 20 == 0 and current_tire != "Soft":
-        return "Soft"
-    return None
+# === Define Gym Environment ===
+class F1PitStopEnv(gym.Env):
+    def __init__(self):
+        super(F1PitStopEnv, self).__init__()
+        # Observations: lap number, tire degradation, weather (encoded), grip
+        self.observation_space = spaces.Box(low=0, high=100, shape=(4,), dtype=np.float32)
+        # Actions: 0 - No pit, 1 - Pit and change tire
+        self.action_space = spaces.Discrete(2)
+        self.reset()
 
-# === RUN SIMULATION ===
-if st.sidebar.button("Run Race Simulation 🚀"):
-    st.subheader(f"Race Simulation: {selected_driver} for {selected_team}")
+    def reset(self):
+        self.lap = 1
+        self.tire_wear = 0
+        self.weather = "Clear"
+        self.grip = 1.0
+        self.total_time = 0
+        self.done = False
+        return self._get_obs()
+
+    def _get_obs(self):
+        weather_map = {"Clear": 0, "Light Rain": 1, "Heavy Rain": 2}
+        return np.array([
+            self.lap,
+            self.tire_wear,
+            weather_map[self.weather],
+            self.grip
+        ], dtype=np.float32)
+
+    def step(self, action):
+        reward = 0
+        pit_penalty = 0
+        # Random weather
+        if self.lap % 10 == 0:
+            self.weather = np.random.choice(["Clear", "Light Rain", "Heavy Rain"], p=[0.5, 0.3, 0.2])
+        self.grip = {"Clear": 1.0, "Light Rain": 0.8, "Heavy Rain": 0.6}[self.weather]
+
+        if action == 1:  # Pit
+            pit_penalty = pit_stop_time
+            self.tire_wear = 0
+        else:
+            self.tire_wear += degradation_base + tire_options[selected_tire]
+
+        lap_time = 100 + (self.tire_wear * self.lap) + (1 - self.grip) * 20 + pit_penalty
+        self.total_time += lap_time
+
+        # Reward: minimize lap_time, but don't overuse tires
+        reward = -lap_time
+
+        self.lap += 1
+        if self.lap > race_length:
+            self.done = True
+
+        return self._get_obs(), reward, self.done, {}
+
+# === Train the RL Agent ===
+st.sidebar.markdown("---")
+train_rl = st.sidebar.button("Train RL Pit Strategy Agent")
+
+if train_rl:
+    st.write("### Training RL Pit Strategy Agent...")
+    env = DummyVecEnv([lambda: F1PitStopEnv()])
+    model = PPO("MlpPolicy", env, verbose=1)
+    model.learn(total_timesteps=10000)
+    model.save("ppo_f1_pit_agent")
+    st.success("Training Complete! Model saved as ppo_f1_pit_agent.")
+
+# === RL Agent Decision Function ===
+def rl_agent_decision(model, lap, tire_wear, weather, grip):
+    weather_map = {"Clear": 0, "Light Rain": 1, "Heavy Rain": 2}
+    obs = np.array([[lap, tire_wear, weather_map[weather], grip]], dtype=np.float32)
+    action, _ = model.predict(obs)
+    return action[0] == 1
+
+# === RUN SIMULATION WITH RL AGENT ===
+if st.sidebar.button("Run RL Race Simulation 🚀"):
+    st.subheader(f"RL Race Simulation: {selected_driver} for {selected_team}")
     st.markdown("---")
 
+    model = PPO.load("ppo_f1_pit_agent")
     player_tire = selected_tire
     player_total_time = 0
     player_lap_times = []
@@ -67,22 +137,8 @@ if st.sidebar.button("Run Race Simulation 🚀"):
     }
     final_degradation = degradation_base + tire_degradation[player_tire]
 
-    opponents = []
-    for i in range(num_opponents):
-        opponent_tire = random.choice(list(tire_degradation.keys()))
-        opponents.append({
-            "name": f"Opponent {i+1}",
-            "degradation_rate": degradation_base + tire_degradation[opponent_tire],
-            "lap_times": [],
-            "pit_laps": [],
-            "tire": opponent_tire,
-            "total_time": 0,
-            "status": "Running"
-        })
-
     leaderboard = []
     dynamic_weather = []
-    safety_car_laps = []
 
     for lap in range(1, race_length + 1):
         if selected_weather == "Dynamic Weather":
@@ -96,20 +152,11 @@ if st.sidebar.button("Run Race Simulation 🚀"):
         grip_level = {"Clear": 1.0, "Light Rain": 0.8, "Heavy Rain": 0.6}[current_weather]
         grip_penalty = (1 - grip_level) * 20
 
-        if lap % 20 == 0:
-            safety_car_laps.append(lap)
-            grip_penalty += 10
+        pit_decision = rl_agent_decision(model, lap, lap * final_degradation, current_weather, grip_level)
 
-        for opponent in opponents:
-            if opponent["status"] == "Running" and random.random() < 0.01:
-                opponent["status"] = "Retired"
-                st.warning(f"{opponent['name']} has retired!")
-
-        new_tire = rl_strategy(lap, grip_level, current_weather, player_tire)
-        if new_tire and new_tire != player_tire:
-            player_tire = new_tire
+        if pit_decision:
             pit_laps.append(lap)
-            final_degradation = degradation_base + tire_degradation[player_tire]
+            final_degradation = degradation_base + tire_degradation[random.choice(list(tire_degradation.keys()))]
             lap_time = 100 + pit_stop_time + grip_penalty
         else:
             lap_time = 100 + (lap * final_degradation) + grip_penalty
@@ -117,78 +164,16 @@ if st.sidebar.button("Run Race Simulation 🚀"):
         player_total_time += lap_time
         player_lap_times.append(lap_time)
 
-        for opponent in opponents:
-            if opponent["status"] == "Retired":
-                opponent["lap_times"].append(np.nan)
-                continue
-
-            if lap % random.choice([15, 18, 22]) == 0:
-                new_tire = random.choice(list(tire_degradation.keys()))
-                opponent["tire"] = new_tire
-                opponent["degradation_rate"] = degradation_base + tire_degradation[new_tire]
-                opponent["pit_laps"].append(lap)
-                lap_time = 100 + pit_stop_time + grip_penalty
-            else:
-                lap_time = 100 + (lap * opponent["degradation_rate"]) + grip_penalty
-
-            opponent["total_time"] += lap_time
-            opponent.setdefault("lap_times", []).append(lap_time)
-
-        drivers = [{"name": selected_driver, "total_time": player_total_time}] + [
-            {"name": o["name"], "total_time": o["total_time"]} for o in opponents
-        ]
-        sorted_drivers = sorted(drivers, key=lambda x: x["total_time"])
-        leaderboard.append([f"{d['name']} (Retired)" if next((o for o in opponents if o['name'] == d['name'] and o['status'] == 'Retired'), None) else d['name'] for d in sorted_drivers])
-
-    st.write("### Lap Times (Player vs Opponents)")
+    # Visualization
+    st.write("### RL Agent Lap Times")
     laps = np.arange(1, race_length + 1)
     fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(laps, player_lap_times, label=f'{selected_driver} ({player_tire})', linewidth=2)
-
-    for opponent in opponents:
-        ax.plot(laps, opponent["lap_times"], label=f'{opponent["name"]} ({opponent["tire"]})', linestyle='--')
-
-    for lap in safety_car_laps:
-        ax.axvline(x=lap, color='orange', linestyle='--', linewidth=2, alpha=0.7)
-
-    ax.scatter(pit_laps, [player_lap_times[i - 1] for i in pit_laps], color='red', label='Your Pit Stops', zorder=5)
+    ax.plot(laps, player_lap_times, label=f'{selected_driver} (RL Agent)', linewidth=2, color='blue')
+    ax.scatter(pit_laps, [player_lap_times[i - 1] for i in pit_laps], color='red', label='Pit Stops', zorder=5)
     ax.set_xlabel("Lap")
     ax.set_ylabel("Lap Time (seconds)")
-    ax.set_title("Lap Times with Pit Stops, Tires, Weather, and Safety Car")
+    ax.set_title("RL Agent Lap Times with Pit Stops")
     ax.legend()
     st.pyplot(fig)
 
-    st.write("### Leaderboard (Lap by Lap)")
-    leaderboard_df = pd.DataFrame(leaderboard, columns=[f'P{i+1}' for i in range(len(leaderboard[0]))])
-    leaderboard_df.index.name = 'Lap'
-    st.dataframe(leaderboard_df)
-
-    st.write("### Final Standings with Tires")
-    final_standings = sorted(drivers, key=lambda x: x["total_time"])
-    for i, driver in enumerate(final_standings, 1):
-        tire_type = player_tire if driver["name"] == selected_driver else next(o["tire"] for o in opponents if o["name"] == driver["name"])
-        status = "(Retired)" if next((o for o in opponents if o["name"] == driver["name"] and o["status"] == "Retired"), None) else ""
-        st.write(f"P{i}: {driver['name']} {status} ({tire_type}) - Total Time: {driver['total_time']:.2f}s")
-
-    st.write("### Safety Car Laps")
-    if safety_car_laps:
-        fig3, ax3 = plt.subplots(figsize=(12, 4))
-        ax3.scatter(safety_car_laps, [1]*len(safety_car_laps), color='orange', label='Safety Car Laps', marker='o', s=100)
-        ax3.set_xlabel("Lap")
-        ax3.set_ylabel("Safety Car Deployed")
-        ax3.set_title("Safety Car Deployment Over Race")
-        ax3.legend()
-        st.pyplot(fig3)
-    else:
-        st.write("None")
-
-    if selected_weather == "Dynamic Weather":
-        st.write("### Dynamic Weather Conditions")
-        fig2, ax2 = plt.subplots(figsize=(12, 4))
-        ax2.plot(range(1, race_length + 1), [1.0 if w == "Clear" else 0.8 if w == "Light Rain" else 0.6 for w in dynamic_weather], marker='o', markersize=6)
-        ax2.set_xlabel("Lap")
-        ax2.set_ylabel("Grip Level")
-        ax2.set_title("Grip Level Over Laps")
-        st.pyplot(fig2)
-
-    st.success("Race Complete! Ready for next simulation 🏁")
+    st.success("RL Race Complete! Ready for next simulation 🏁")
