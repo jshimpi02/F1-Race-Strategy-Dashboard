@@ -10,8 +10,9 @@ import random
 # RL Imports
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
+
 
 # === PHASE 7: F1 Race Strategy Simulator ===
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
