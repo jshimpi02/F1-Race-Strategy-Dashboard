@@ -136,7 +136,7 @@ if st.sidebar.button("Run RL Race Simulation 🚀"):
     dynamic_weather = []
     tire_wear_history = []
     fuel_load_history = []
-    fuel_load = 100  # starting fuel percentage
+    fuel_load = 100
 
     for lap in range(1, race_length + 1):
         if selected_weather == "Dynamic Weather":
@@ -162,14 +162,14 @@ if st.sidebar.button("Run RL Race Simulation 🚀"):
         player_total_time += lap_time
         player_lap_times.append(lap_time)
 
-        # Track tire wear and fuel
         tire_wear_history.append(lap * final_degradation)
         fuel_load -= 100 / race_length
         fuel_load_history.append(fuel_load)
 
-    # === Visualization ===
-    st.write("### RL Agent Lap Times")
     laps = np.arange(1, race_length + 1)
+
+    # === Lap Times Plot ===
+    st.write("### RL Agent Lap Times")
     fig1, ax1 = plt.subplots(figsize=(14, 6))
     ax1.plot(laps, player_lap_times, label=f'{selected_driver} (RL Agent)', linewidth=2, color='blue')
     ax1.scatter(pit_laps, [player_lap_times[i - 1] for i in pit_laps], color='red', label='Pit Stops', zorder=5)
@@ -179,6 +179,7 @@ if st.sidebar.button("Run RL Race Simulation 🚀"):
     ax1.legend()
     st.pyplot(fig1)
 
+    # === Tire Wear Plot ===
     st.write("### Tire Wear Over Race")
     fig2, ax2 = plt.subplots(figsize=(14, 6))
     ax2.plot(laps, tire_wear_history, color='orange')
@@ -187,6 +188,7 @@ if st.sidebar.button("Run RL Race Simulation 🚀"):
     ax2.set_title("Tire Wear Progression During the Race")
     st.pyplot(fig2)
 
+    # === Fuel Load Plot ===
     st.write("### Fuel Load Over Race")
     fig3, ax3 = plt.subplots(figsize=(14, 6))
     ax3.plot(laps, fuel_load_history, color='green')
