@@ -13,7 +13,6 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 import gymnasium as gym
 from gymnasium import spaces
 
-
 # === PHASE 7: F1 Race Strategy Simulator ===
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
 st.title("🏎️ F1 Race Strategy Simulator - RL Agent + Dynamic Weather + Incidents")
@@ -115,8 +114,8 @@ if train_rl:
 def rl_agent_decision(model, lap, tire_wear, weather, grip):
     weather_map = {"Clear": 0, "Light Rain": 1, "Heavy Rain": 2}
     obs = np.array([[lap, tire_wear, weather_map[weather], grip]], dtype=np.float32)
-    action, _ = model.predict(obs)
-    return action[0] == 1
+    action, _states = model.predict(obs)
+    return action == 1
 
 # === RUN SIMULATION WITH RL AGENT ===
 if st.sidebar.button("Run RL Race Simulation 🚀"):
