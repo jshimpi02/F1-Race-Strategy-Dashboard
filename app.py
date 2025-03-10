@@ -30,7 +30,7 @@ selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
 selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
 degradation_base = teams[selected_team]["degradation_factor"]
 team_logo = teams[selected_team]["logo"]
-st.sidebar.image(team_logo, caption=selected_team, use_column_width=True)
+st.sidebar.image(team_logo, caption=selected_team, use_container_width=True)
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
 # === DRIVER PROFILES ===
@@ -47,7 +47,7 @@ driver_profiles = {
 profile = driver_profiles[selected_driver]
 
 # === DRIVER PHOTO ===
-st.sidebar.image(profile["photo"], caption=selected_driver, use_column_width=True)
+st.sidebar.image(profile["photo"], caption=selected_driver, use_container_width=True)
 
 # === SIMULATION SETTINGS ===
 st.sidebar.header("⚙️ Simulation Settings")
