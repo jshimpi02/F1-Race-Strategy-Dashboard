@@ -7,7 +7,7 @@ import pandas as pd
 st.set_page_config(page_title="🏎️ F1 Race Strategy Dashboard", layout="wide")
 
 # Title
-st.title("🏎️ F1 Race Strategy Simulator - Multi-Driver Battle")
+st.title("🏎️ F1 Race Strategy Simulator - Multi-Driver + Dynamic Weather")
 st.markdown("---")
 
 # ================================
@@ -65,7 +65,25 @@ pit_stop_time = st.sidebar.slider("Pit Stop Time Loss", min_value=15, max_value=
 # Final degradation for your driver
 final_degradation = degradation_base + tire_degradation
 
-st.sidebar.markdown(f"### Final Degradation per Lap: {final_degradation}")
+# ================================
+# 🌦️ WEATHER SETTINGS
+# ================================
+st.sidebar.header("🌦️ Weather Settings")
+
+weather_types = ["Clear", "Light Rain", "Heavy Rain", "Dynamic Weather"]
+selected_weather = st.sidebar.selectbox("Select Weather Condition", weather_types)
+
+# Grip level based on weather
+if selected_weather == "Clear":
+    grip_level = 1.0
+elif selected_weather == "Light Rain":
+    grip_level = 0.8
+elif selected_weather == "Heavy Rain":
+    grip_level = 0.6
+elif selected_weather == "Dynamic Weather":
+    grip_level = None  # We'll vary it lap by lap
+
+st.sidebar.markdown(f"### Base Grip Level: {grip_level if grip_level else 'Dynamic'}")
 
 # ================================
 # 🚀 RUN SIMULATION
@@ -74,7 +92,7 @@ if st.sidebar.button("Run Simulation 🚀"):
     st.subheader(f"Race Simulation for {selected_driver} - {selected_team}")
     st.markdown("---")
 
-    # === Step 1: Initialize Opponents ===
+    # === Opponent Initialization ===
     num_opponents = 5
     opponents = []
 
@@ -88,38 +106,49 @@ if st.sidebar.button("Run Simulation 🚀"):
             "current_lap_time": 100
         })
 
-    # === Initialize Player Stats ===
+    # === Player Initialization ===
     agent_total_time = 0
     agent_lap_times = []
     pit_stops = [15, 40]
-
     leaderboard = []
+    dynamic_weather = []
 
-    # === Step 2: Run Race Lap-by-Lap ===
+    # === Run the Race ===
     for lap in range(1, race_length + 1):
-        # --- Agent (Your Driver) ---
+
+        # --- Dynamic Weather Updates ---
+        if selected_weather == "Dynamic Weather":
+            if lap % 15 == 0:
+                grip_level = np.random.choice([1.0, 0.8, 0.6], p=[0.5, 0.3, 0.2])
+            dynamic_weather.append(grip_level)
+        else:
+            dynamic_weather.append(grip_level)
+
+        grip_penalty = (1 - grip_level) * 20  # Grip impact on lap time
+
+        # === Agent Lap Time ===
         if lap in pit_stops:
             pit_penalty = pit_stop_time
-            agent_lap_time = 100 + pit_penalty
-            agent_degradation = 0
+            agent_lap_time = 100 + pit_penalty + grip_penalty
         else:
-            agent_lap_time = 100 + (lap * final_degradation)
+            agent_lap_time = 100 + (lap * final_degradation) + grip_penalty
 
         agent_total_time += agent_lap_time
         agent_lap_times.append(agent_lap_time)
 
-        # --- Opponents ---
+        # === Opponent Lap Times ===
         for opponent in opponents:
             if lap in opponent["pit_laps"]:
                 pit_penalty = pit_stop_time
-                opponent["current_lap_time"] = 100 + pit_penalty
+                opponent["current_lap_time"] = 100 + pit_penalty + grip_penalty
             else:
                 opponent["current_lap_time"] += opponent["degradation_rate"]
+                opponent["current_lap_time"] += grip_penalty
 
             opponent["total_time"] += opponent["current_lap_time"]
             opponent["lap_times"].append(opponent["current_lap_time"])
 
-        # --- Leaderboard Sorting ---
+        # === Leaderboard Sorting ===
         drivers = [{"name": selected_driver, "total_time": agent_total_time}] + [
             {"name": o["name"], "total_time": o["total_time"]} for o in opponents
         ]
@@ -127,14 +156,13 @@ if st.sidebar.button("Run Simulation 🚀"):
         sorted_drivers = sorted(drivers, key=lambda x: x["total_time"])
         leaderboard.append([p["name"] for p in sorted_drivers])
 
-    # === Step 3: Visualize Lap Times ===
+    # === Visualize Lap Times ===
     st.write("### Lap Times & Pit Stops")
     laps = np.arange(1, race_length + 1)
 
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(laps, agent_lap_times, label=f'{selected_driver} Lap Times', linewidth=2)
 
-    # Opponent lap times
     for opponent in opponents:
         ax.plot(laps, opponent["lap_times"], label=opponent["name"], linestyle='--')
 
@@ -142,27 +170,25 @@ if st.sidebar.button("Run Simulation 🚀"):
 
     ax.set_xlabel("Lap")
     ax.set_ylabel("Lap Time (seconds)")
-    ax.set_title("Lap Times with Pit Stops")
+    ax.set_title("Lap Times with Pit Stops & Weather Effects")
     ax.legend()
     st.pyplot(fig)
 
-    # === Step 4: Leaderboard Over Race ===
+    # === Leaderboard Over Race ===
     st.write("### Leaderboard Over Race (Lap by Lap)")
 
     leaderboard_df = pd.DataFrame(leaderboard, columns=[f'P{i+1}' for i in range(len(opponents) + 1)])
     leaderboard_df.index.name = 'Lap'
     st.dataframe(leaderboard_df)
 
-    # === Step 5: Track Position Delta (Lead Time vs Closest Rival) ===
-    st.write("### Track Position Delta (Lead Time Over Closest Rival)")
+    # === Lead Time vs Closest Rival ===
+    st.write("### Lead Time Over Closest Rival")
 
-    # Closest rival is the second place driver at each lap
     lead_times = []
-    for lap_data in leaderboard:
+    for idx, lap_data in enumerate(leaderboard):
         leader = lap_data[0]
         runner_up = lap_data[1]
 
-        # Find times for both
         leader_time = agent_total_time if leader == selected_driver else next(o["total_time"] for o in opponents if o["name"] == leader)
         runner_up_time = agent_total_time if runner_up == selected_driver else next(o["total_time"] for o in opponents if o["name"] == runner_up)
 
@@ -176,5 +202,16 @@ if st.sidebar.button("Run Simulation 🚀"):
     ax2.set_title("Lead Time Over Closest Rival")
     ax2.legend()
     st.pyplot(fig2)
+
+    # === Dynamic Weather Chart ===
+    if selected_weather == "Dynamic Weather":
+        st.write("### Weather Conditions Over Race")
+
+        fig3, ax3 = plt.subplots(figsize=(12, 4))
+        ax3.plot(range(1, race_length + 1), dynamic_weather, marker='o')
+        ax3.set_xlabel("Lap")
+        ax3.set_ylabel("Grip Level (1 = Dry, 0.6 = Heavy Rain)")
+        ax3.set_title("Track Grip Conditions Over Race")
+        st.pyplot(fig3)
 
     st.success("Race Simulation Complete ✅")
