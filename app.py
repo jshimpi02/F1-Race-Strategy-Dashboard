@@ -19,17 +19,35 @@ st.title("🏎️ F1 Race Strategy Simulator - RL Agent + Dynamic Weather + Inci
 st.markdown("---")
 
 # === TEAM & DRIVER SELECTION ===
-st.sidebar.header("🏁 Team & Driver Selection")
+st.sidebar.header("🏎️ Team & Driver Selection")
 teams = {
-    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20},
-    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15},
-    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25},
-    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30},
+    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/8/89/Mercedes-Benz_in_Motorsport_logo.svg/1920px-Mercedes-Benz_in_Motorsport_logo.svg.png"},
+    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15, "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/0/01/Red_Bull_Racing_logo.svg/1920px-Red_Bull_Racing_logo.svg.png"},
+    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25, "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/3/3d/Scuderia_Ferrari_Logo.svg/1920px-Scuderia_Ferrari_Logo.svg.png"},
+    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30, "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/1/19/McLaren_Racing_logo.svg/1920px-McLaren_Racing_logo.svg.png"}
 }
 selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
 selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
 degradation_base = teams[selected_team]["degradation_factor"]
+team_logo = teams[selected_team]["logo"]
+st.sidebar.image(team_logo, caption=selected_team, use_column_width=True)
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
+
+# === DRIVER PROFILES ===
+driver_profiles = {
+    "Lewis Hamilton": {"skill": 0.95, "aggression": 0.4, "wet_skill": 0.9, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Lewis_Hamilton_2022.jpg/440px-Lewis_Hamilton_2022.jpg"},
+    "George Russell": {"skill": 0.90, "aggression": 0.3, "wet_skill": 0.85, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/George_Russell_2021.jpg/440px-George_Russell_2021.jpg"},
+    "Max Verstappen": {"skill": 0.97, "aggression": 0.5, "wet_skill": 0.85, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Max_Verstappen_2017_Malaysia_3.jpg/440px-Max_Verstappen_2017_Malaysia_3.jpg"},
+    "Sergio Perez": {"skill": 0.91, "aggression": 0.35, "wet_skill": 0.80, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Sergio_P%C3%A9rez_2022.jpg/440px-Sergio_P%C3%A9rez_2022.jpg"},
+    "Charles Leclerc": {"skill": 0.93, "aggression": 0.6, "wet_skill": 0.8, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Charles_Leclerc_2019.jpg/440px-Charles_Leclerc_2019.jpg"},
+    "Carlos Sainz": {"skill": 0.92, "aggression": 0.4, "wet_skill": 0.83, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Carlos_Sainz_2021.jpg/440px-Carlos_Sainz_2021.jpg"},
+    "Lando Norris": {"skill": 0.89, "aggression": 0.45, "wet_skill": 0.82, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Lando_Norris_2021.jpg/440px-Lando_Norris_2021.jpg"},
+    "Oscar Piastri": {"skill": 0.88, "aggression": 0.38, "wet_skill": 0.81, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Oscar_Piastri_2023.jpg/440px-Oscar_Piastri_2023.jpg"}
+}
+profile = driver_profiles[selected_driver]
+
+# === DRIVER PHOTO ===
+st.sidebar.image(profile["photo"], caption=selected_driver, use_column_width=True)
 
 # === SIMULATION SETTINGS ===
 st.sidebar.header("⚙️ Simulation Settings")
@@ -46,6 +64,8 @@ selected_weather = st.sidebar.selectbox("Select Weather", weather_types)
 st.sidebar.header("🛞 Tire Compound Selection")
 tire_options = {"Soft": 0.40, "Medium": 0.25, "Hard": 0.15}
 selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options.keys()))
+
+# (Leaving the remaining parts of the code as they were, focusing only on adding the logos/photos/sidebar visuals as requested)
 
 # === Define Gym Environment ===
 class F1PitStopEnv(gym.Env):
