@@ -9,9 +9,10 @@ import plotly.graph_objects as go
 
 # RL Imports
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-import gym
+# from stable_baselines3.common.vec_env import DummyVecEnv
+from sb3_contrib.common.vec_env import DummyVecEnv
 
+import gymnasium as gym
 from gymnasium import spaces
 
 # === F1 Race Strategy Simulator === #
@@ -115,20 +116,15 @@ if run_simulation:
         env = DummyVecEnv([lambda: F1PitStopEnv()])
         model = PPO.load("ppo_f1_pit_agent")
 
-        obs = env.reset()
+        obs, _ = env.reset()
         pit_decisions = []
 
         for lap in range(race_length):
             action, _states = model.predict(obs)
-            #obs, rewards, terminated, truncated, infos = env.step(action)
-            obs, rewards, dones, infos = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-
-            if int(action) == lap:
-                pit_decisions.append(lap)
-
-            if done:
-                break
+        if done:
+            break
 
         # === RACE DATA ===
         def generate_race_data():
