@@ -10,7 +10,8 @@ import plotly.graph_objects as go
 # RL Imports
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-import gymnasium as gym
+import gym
+
 from gymnasium import spaces
 
 # === F1 Race Strategy Simulator === #
@@ -95,7 +96,7 @@ class F1PitStopEnv(gym.Env):
         obs = np.array([self.current_lap / race_length, lap_time / 120, pit], dtype=np.float32)
         info = {}
 
-        return obs, reward, terminated, truncated, info
+        return obs, reward, done, info
 
 # === TRAIN RL AGENT ===
 train_agent = st.sidebar.button("🚀 Train RL Agent")
