@@ -21,10 +21,10 @@ st.markdown("---")
 # === TEAM & DRIVER SELECTION ===
 st.sidebar.header("🏎️ Team & Driver Selection")
 teams = {
-    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/8/89/Mercedes-Benz_in_Motorsport_logo.svg/1920px-Mercedes-Benz_in_Motorsport_logo.svg.png"},
-    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15, "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/0/01/Red_Bull_Racing_logo.svg/1920px-Red_Bull_Racing_logo.svg.png"},
-    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25, "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/3/3d/Scuderia_Ferrari_Logo.svg/1920px-Scuderia_Ferrari_Logo.svg.png"},
-    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30, "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/1/19/McLaren_Racing_logo.svg/1920px-McLaren_Racing_logo.svg.png"}
+    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20},
+    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15},
+    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25},
+    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30}
 }
 selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
 selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
