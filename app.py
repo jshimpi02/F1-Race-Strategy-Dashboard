@@ -119,7 +119,8 @@ if run_simulation:
 
         for lap in range(race_length):
             action, _states = model.predict(obs)
-            obs, rewards, terminated, truncated, infos = env.step(action)
+            #obs, rewards, terminated, truncated, infos = env.step(action)
+            obs, rewards, dones, infos = env.step(action)
             done = terminated or truncated
 
             if int(action) == lap:
