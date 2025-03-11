@@ -2,10 +2,10 @@ import os
 os.environ["PYTORCH_JIT"] = "0"
 
 import streamlit as st
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import random
+import plotly.graph_objects as go
 
 # RL Imports
 from stable_baselines3 import PPO
@@ -13,27 +13,25 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 import gymnasium as gym
 from gymnasium import spaces
 
-# === PHASE 7: F1 Race Strategy Simulator ===
+# === F1 Race Strategy Simulator === #
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
 st.title("🏎️ F1 Race Strategy Simulator - RL Agent + Dynamic Weather + Incidents")
 st.markdown("---")
 
-# === TEAM & DRIVER SELECTION ===
+# === TEAM & DRIVER SELECTION === #
 st.sidebar.header("🏎️ Team & Driver Selection")
 teams = {
-    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20},
-    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15},
-    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25},
-    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30}
+    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "color": ["#00D2BE", "#FFFFFF"]},
+    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15, "color": ["#1E41FF", "#FFD700"]},
+    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25, "color": ["#DC0000", "#FFFFFF"]},
+    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30, "color": ["#FF8700", "#FFFFFF"]}
 }
 selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
 selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
 degradation_base = teams[selected_team]["degradation_factor"]
-#team_logo = teams[selected_team]["logo"]
 team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
-#st.sidebar.image(team_logo, caption=selected_team, use_container_width=True)
+team_colors = teams[selected_team]["color"]
 st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
-
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
 # === DRIVER PROFILES ===
@@ -53,8 +51,6 @@ profile = driver_profiles[selected_driver]
 driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
 st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
-#st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
-
 # === SIMULATION SETTINGS ===
 st.sidebar.header("⚙️ Simulation Settings")
 race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
@@ -67,166 +63,169 @@ weather_types = ["Clear", "Light Rain", "Heavy Rain", "Dynamic Weather"]
 selected_weather = st.sidebar.selectbox("Select Weather", weather_types)
 
 # === TIRE COMPOUND SELECTION ===
-st.sidebar.header("🛞 Tire Compound Selection")
+st.sidebar.header("🚾 Tire Compound Selection")
 tire_options = {"Soft": 0.40, "Medium": 0.25, "Hard": 0.15}
 selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options.keys()))
 
-# (Leaving the remaining parts of the code as they were, focusing only on adding the logos/photos/sidebar visuals as requested)
-
-# === Define Gym Environment ===
+# === RL ENVIRONMENT ===
 class F1PitStopEnv(gym.Env):
     def __init__(self):
         super(F1PitStopEnv, self).__init__()
-        self.observation_space = spaces.Box(low=0, high=100, shape=(4,), dtype=np.float32)
-        self.action_space = spaces.Discrete(2)
+        self.action_space = spaces.Discrete(race_length)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(3,), dtype=np.float32)
         self.reset()
 
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        self.lap = 1
-        self.tire_wear = 0
-        self.weather = "Clear"
-        self.grip = 1.0
+    def reset(self, seed=None):
+        self.current_lap = 0
         self.total_time = 0
-        self.done = False
-        return self._get_obs(), {}
-
-    def _get_obs(self):
-        weather_map = {"Clear": 0, "Light Rain": 1, "Heavy Rain": 2}
-        return np.array([
-            self.lap,
-            self.tire_wear,
-            weather_map[self.weather],
-            self.grip
-        ], dtype=np.float32)
+        self.pit_strategy = []
+        obs = np.array([0, 0, 0], dtype=np.float32)
+        return obs, {}
 
     def step(self, action):
-        pit_penalty = 0
-        if self.lap % 10 == 0:
-            self.weather = np.random.choice(["Clear", "Light Rain", "Heavy Rain"], p=[0.5, 0.3, 0.2])
-
-        self.grip = {"Clear": 1.0, "Light Rain": 0.8, "Heavy Rain": 0.6}[self.weather]
-
-        if action == 1:
-            pit_penalty = pit_stop_time
-            self.tire_wear = 0
-        else:
-            self.tire_wear += degradation_base + tire_options[selected_tire]
-
-        lap_time = 100 + (self.tire_wear * self.lap) + (1 - self.grip) * 20 + pit_penalty
+        pit = 1 if action == self.current_lap else 0
+        lap_time = 90 + degradation_base * self.current_lap + pit * pit_stop_time
         self.total_time += lap_time
-
         reward = -lap_time
-        self.lap += 1
+        self.current_lap += 1
+        done = self.current_lap >= race_length
+        obs = np.array([self.current_lap / race_length, lap_time / 120, pit], dtype=np.float32)
+        return obs, reward, done, False, {}
 
-        terminated = self.lap > race_length
-        truncated = False
+# === TRAIN RL AGENT ===
+env = DummyVecEnv([lambda: F1PitStopEnv()])
+model = PPO("MlpPolicy", env, verbose=1)
+model.learn(total_timesteps=10000)
+model.save("ppo_f1_pit_agent")
 
-        return self._get_obs(), reward, terminated, truncated, {}
-
-# === Train the RL Agent ===
-st.sidebar.markdown("---")
-train_rl = st.sidebar.button("Train RL Pit Strategy Agent")
-
-if train_rl:
-    st.write("### Training RL Pit Strategy Agent...")
-    env = DummyVecEnv([lambda: F1PitStopEnv()])
-    model = PPO("MlpPolicy", env, verbose=1)
-    model.learn(total_timesteps=10000)
-    model.save("ppo_f1_pit_agent")
-    st.success("Training Complete! Model saved as ppo_f1_pit_agent.")
-
-# === RL Agent Decision Function ===
-def rl_agent_decision(model, lap, tire_wear, weather, grip):
-    weather_map = {"Clear": 0, "Light Rain": 1, "Heavy Rain": 2}
-    obs = np.array([[lap, tire_wear, weather_map[weather], grip]], dtype=np.float32)
+# === SIMULATE RL AGENT PIT STRATEGY ===
+pit_decisions = []
+obs, _ = env.reset()
+for lap in range(race_length):
     action, _states = model.predict(obs)
-    return action == 1
+    obs, reward, done, truncated, info = env.step(action)
+    if int(action) == lap:
+        pit_decisions.append(lap)
 
-# === RUN SIMULATION WITH RL AGENT ===
-if st.sidebar.button("Run RL Race Simulation 🚀"):
-    st.subheader(f"RL Race Simulation: {selected_driver} for {selected_team}")
-    st.markdown("---")
-
-    MODEL_PATH = "models/ppo_f1_pit_agent.zip"
-    model = PPO.load(MODEL_PATH)
-
-    player_tire = selected_tire
-    player_total_time = 0
-    player_lap_times = []
-    pit_laps = []
-
-    tire_degradation = {
-        "Soft": 0.40,
-        "Medium": 0.25,
-        "Hard": 0.15,
-        "Intermediates": 0.30,
-        "Wets": 0.35
-    }
-    final_degradation = degradation_base + tire_degradation[player_tire]
-
-    dynamic_weather = []
-    tire_wear_history = []
-    fuel_load_history = []
-    fuel_load = 100
-
-    for lap in range(1, race_length + 1):
-        if selected_weather == "Dynamic Weather":
-            if lap == 1 or lap % 15 == 0:
-                current_weather = np.random.choice(["Clear", "Light Rain", "Heavy Rain"], p=[0.5, 0.3, 0.2])
-            dynamic_weather.append(current_weather)
-        else:
-            current_weather = selected_weather
-            dynamic_weather.append(current_weather)
-
-        grip_level = {"Clear": 1.0, "Light Rain": 0.8, "Heavy Rain": 0.6}[current_weather]
-        grip_penalty = (1 - grip_level) * 20
-
-        pit_decision = rl_agent_decision(model, lap, lap * final_degradation, current_weather, grip_level)
-
-        if pit_decision:
-            pit_laps.append(lap)
-            final_degradation = degradation_base + tire_degradation[random.choice(list(tire_degradation.keys()))]
-            lap_time = 100 + pit_stop_time + grip_penalty
-        else:
-            lap_time = 100 + (lap * final_degradation) + grip_penalty
-
-        player_total_time += lap_time
-        player_lap_times.append(lap_time)
-
-        tire_wear_history.append(lap * final_degradation)
-        fuel_load -= 100 / race_length
-        fuel_load_history.append(fuel_load)
-
+# === RACE DATA ===
+def generate_race_data():
     laps = np.arange(1, race_length + 1)
+    lap_times = np.random.normal(90, 2, size=race_length)
+    lead_delta = np.cumsum(np.random.normal(0, 1, size=race_length))
+    tire_wear = np.maximum(0, 100 - degradation_base * laps * 100)
+    fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
+    return laps, lap_times, lead_delta, tire_wear, fuel_load
 
-    # === Lap Times Plot ===
-    st.write("### RL Agent Lap Times")
-    fig1, ax1 = plt.subplots(figsize=(14, 6))
-    ax1.plot(laps, player_lap_times, label=f'{selected_driver} (RL Agent)', linewidth=2, color='blue')
-    ax1.scatter(pit_laps, [player_lap_times[i - 1] for i in pit_laps], color='red', label='Pit Stops', zorder=5)
-    ax1.set_xlabel("Lap")
-    ax1.set_ylabel("Lap Time (seconds)")
-    ax1.set_title("RL Agent Lap Times with Pit Stops")
-    ax1.legend()
-    st.pyplot(fig1)
+laps, lap_times, lead_delta, tire_wear, fuel_load = generate_race_data()
 
-    # === Tire Wear Plot ===
-    st.write("### Tire Wear Over Race")
-    fig2, ax2 = plt.subplots(figsize=(14, 6))
-    ax2.plot(laps, tire_wear_history, color='orange')
-    ax2.set_xlabel("Lap")
-    ax2.set_ylabel("Tire Wear")
-    ax2.set_title("Tire Wear Progression During the Race")
-    st.pyplot(fig2)
+# === VISUALS ===
+col1, col2 = st.columns(2)
 
-    # === Fuel Load Plot ===
-    st.write("### Fuel Load Over Race")
-    fig3, ax3 = plt.subplots(figsize=(14, 6))
-    ax3.plot(laps, fuel_load_history, color='green')
-    ax3.set_xlabel("Lap")
-    ax3.set_ylabel("Fuel Remaining (%)")
-    ax3.set_title("Fuel Load Progression During the Race")
-    st.pyplot(fig3)
+with col1:
+    fig_lap_times = go.Figure()
+    fig_lap_times.add_trace(go.Scatter(
+        x=laps,
+        y=lap_times,
+        mode='lines+markers',
+        name='Lap Times',
+        line=dict(color=team_colors[0], width=3)
+    ))
+    fig_lap_times.update_layout(
+        title='Lap Times Over Race',
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white'),
+        xaxis_title='Lap',
+        yaxis_title='Time (s)',
+        height=400
+    )
+    st.plotly_chart(fig_lap_times, use_container_width=True)
 
-    st.success("RL Race Complete! Ready for next simulation 🏁")
+with col2:
+    fig_position_delta = go.Figure()
+    fig_position_delta.add_trace(go.Scatter(
+        x=laps,
+        y=lead_delta,
+        mode='lines+markers',
+        name='Position Delta',
+        line=dict(color=team_colors[1], width=3)
+    ))
+    fig_position_delta.update_layout(
+        title='Track Position Delta Over Race',
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white'),
+        xaxis_title='Lap',
+        yaxis_title='Time Delta (s)',
+        height=400
+    )
+    st.plotly_chart(fig_position_delta, use_container_width=True)
+
+col3, col4 = st.columns(2)
+
+with col3:
+    fig_tire_wear = go.Figure()
+    fig_tire_wear.add_trace(go.Scatter(
+        x=laps,
+        y=tire_wear,
+        mode='lines+markers',
+        name='Tire Wear (%)',
+        line=dict(color='orange', width=3)
+    ))
+    fig_tire_wear.update_layout(
+        title='Tire Wear Over Race',
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white'),
+        xaxis_title='Lap',
+        yaxis_title='Tire Wear (%)',
+        height=400
+    )
+    st.plotly_chart(fig_tire_wear, use_container_width=True)
+
+with col4:
+    fig_fuel_load = go.Figure()
+    fig_fuel_load.add_trace(go.Scatter(
+        x=laps,
+        y=fuel_load,
+        mode='lines+markers',
+        name='Fuel Load (%)',
+        line=dict(color='yellow', width=3)
+    ))
+    fig_fuel_load.update_layout(
+        title='Fuel Load Over Race',
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white'),
+        xaxis_title='Lap',
+        yaxis_title='Fuel Load (%)',
+        height=400
+    )
+    st.plotly_chart(fig_fuel_load, use_container_width=True)
+
+# === PIT STRATEGY VISUAL ===
+st.subheader("🔧 Pit Stop Strategy")
+st.markdown(f"Pit Stops at Laps: {pit_decisions}")
+
+fig_pit = go.Figure()
+fig_pit.add_trace(go.Scatter(
+    x=pit_decisions,
+    y=[pit_stop_time for _ in pit_decisions],
+    mode='markers',
+    marker=dict(size=12, color='red'),
+    name='Pit Stops'
+))
+fig_pit.update_layout(
+    template='plotly_dark',
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    font=dict(color='white'),
+    xaxis_title='Lap',
+    yaxis_title='Pit Stop Time (s)',
+    height=400
+)
+st.plotly_chart(fig_pit, use_container_width=True)
