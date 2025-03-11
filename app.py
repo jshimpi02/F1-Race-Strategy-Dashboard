@@ -97,7 +97,7 @@ class F1PitStopEnv(gym.Env):
         obs = np.array([self.current_lap / race_length, lap_time / 120, pit], dtype=np.float32)
         info = {}
 
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
 # === TRAIN RL AGENT ===
 train_agent = st.sidebar.button("🚀 Train RL Agent")
