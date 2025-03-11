@@ -1,5 +1,8 @@
 import os
 os.environ["PYTORCH_JIT"] = "0"
+import logging
+logging.getLogger("torch").setLevel(logging.ERROR)
+
 
 import streamlit as st
 import numpy as np
