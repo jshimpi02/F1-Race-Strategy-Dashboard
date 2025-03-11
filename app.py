@@ -9,18 +9,16 @@ import plotly.graph_objects as go
 
 # RL Imports
 from stable_baselines3 import PPO
-# from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv
 import gymnasium as gym
 from gymnasium import spaces
-from sb3_contrib.common.vec_env import DummyVecEnv
 
-
-# === F1 Race Strategy Simulator === #
+# === STREAMLIT CONFIG ===
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
 st.title("🏎️ F1 Race Strategy Simulator - RL Agent + Dynamic Weather + Incidents")
 st.markdown("---")
 
-# === TEAM & DRIVER SELECTION === #
+# === TEAM & DRIVER SELECTION ===
 st.sidebar.header("🏎️ Team & Driver Selection")
 teams = {
     "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "color": ["#00D2BE", "#FFFFFF"]},
@@ -82,8 +80,7 @@ class F1PitStopEnv(gym.Env):
         self.total_time = 0
         self.pit_strategy = []
         obs = np.array([0, 0, 0], dtype=np.float32)
-        info = {}
-        return obs, info
+        return obs  # Gymnasium returns just obs unless options return_info=True
 
     def step(self, action):
         pit = 1 if action == self.current_lap else 0
@@ -91,18 +88,18 @@ class F1PitStopEnv(gym.Env):
         self.total_time += lap_time
         reward = -lap_time
         self.current_lap += 1
-        terminated = self.current_lap >= race_length
-        truncated = False
+        done = self.current_lap >= race_length
 
         obs = np.array([self.current_lap / race_length, lap_time / 120, pit], dtype=np.float32)
         info = {}
 
-        return obs, reward, terminated, truncated, info
+        return obs, reward, done, info
 
-# === TRAIN RL AGENT ===
+# === TRAIN & SIMULATION BUTTONS ===
 train_agent = st.sidebar.button("🚀 Train RL Agent")
 run_simulation = st.sidebar.button("🏁 Run Simulation")
 
+# === TRAIN AGENT ===
 if train_agent:
     with st.spinner("Training RL agent..."):
         env = DummyVecEnv([lambda: F1PitStopEnv()])
@@ -111,28 +108,24 @@ if train_agent:
         model.save("ppo_f1_pit_agent")
     st.sidebar.success("Training Complete! Model Saved.")
 
+# === RUN SIMULATION ===
 if run_simulation:
     with st.spinner("Running simulation with trained agent..."):
         env = DummyVecEnv([lambda: F1PitStopEnv()])
         model = PPO.load("ppo_f1_pit_agent")
 
-        obs, _ = env.reset()
+        obs = env.reset()  # Gym returns just obs now
         pit_decisions = []
-
-        pit_decisions = []
-        obs = env.reset()
 
         for lap in range(race_length):
             action, _states = model.predict(obs)
-            obs, rewards, done, truncated, infos = env.step(action)
+            obs, rewards, done, info = env.step(action)
 
-        if int(action) == lap:
-            pit_decisions.append(lap)
+            if int(action) == lap:
+                pit_decisions.append(lap)
 
-        if done or truncated:
-            break
-
-            
+            if done:
+                break  # Correctly placed inside loop!
 
         # === RACE DATA ===
         def generate_race_data():
@@ -234,6 +227,7 @@ if run_simulation:
             )
             st.plotly_chart(fig_fuel_load, use_container_width=True)
 
+        # === PIT STRATEGY VISUAL ===
         st.subheader("🔧 Pit Stop Strategy")
         st.markdown(f"Pit Stops at Laps: {pit_decisions}")
 
@@ -257,3 +251,4 @@ if run_simulation:
         st.plotly_chart(fig_pit, use_container_width=True)
 
         st.sidebar.success("Simulation Complete!")
+
