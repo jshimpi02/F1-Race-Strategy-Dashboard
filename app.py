@@ -114,7 +114,7 @@ if run_simulation:
         env = DummyVecEnv([lambda: F1PitStopEnv()])
         model = PPO.load("ppo_f1_pit_agent")
 
-        obs, _ = env.reset()
+        obs = env.reset()
         pit_decisions = []
 
         for lap in range(race_length):
