@@ -1,10 +1,5 @@
 import os
 os.environ["PYTORCH_JIT"] = "0"
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
-import logging
-logging.getLogger("torch").setLevel(logging.ERROR)
-
 
 import streamlit as st
 import numpy as np
@@ -18,12 +13,12 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 import gymnasium as gym
 from gymnasium import spaces
 
-# === STREAMLIT CONFIG ===
+# === F1 Race Strategy Simulator === #
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
 st.title("🏎️ F1 Race Strategy Simulator - RL Agent + Dynamic Weather + Incidents")
 st.markdown("---")
 
-# === TEAM & DRIVER SELECTION ===
+# === TEAM & DRIVER SELECTION === #
 st.sidebar.header("🏎️ Team & Driver Selection")
 teams = {
     "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "color": ["#00D2BE", "#FFFFFF"]},
@@ -56,23 +51,23 @@ profile = driver_profiles[selected_driver]
 driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
 st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
-# === SIMULATION SETTINGS ===
+# === SIMULATION SETTINGS === #
 st.sidebar.header("⚙️ Simulation Settings")
 race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
 pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
 num_opponents = 5
 
-# === WEATHER SETTINGS ===
+# === WEATHER SETTINGS === #
 st.sidebar.header("🌦️ Weather Settings")
 weather_types = ["Clear", "Light Rain", "Heavy Rain", "Dynamic Weather"]
 selected_weather = st.sidebar.selectbox("Select Weather", weather_types)
 
-# === TIRE COMPOUND SELECTION ===
+# === TIRE COMPOUND SELECTION === #
 st.sidebar.header("🚾 Tire Compound Selection")
 tire_options = {"Soft": 0.40, "Medium": 0.25, "Hard": 0.15}
 selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options.keys()))
 
-# === RL ENVIRONMENT ===
+# === RL ENVIRONMENT === #
 class F1PitStopEnv(gym.Env):
     def __init__(self):
         super(F1PitStopEnv, self).__init__()
@@ -81,11 +76,13 @@ class F1PitStopEnv(gym.Env):
         self.reset()
 
     def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
         self.current_lap = 0
         self.total_time = 0
         self.pit_strategy = []
         obs = np.array([0, 0, 0], dtype=np.float32)
-        return obs  # Gymnasium returns just obs unless options return_info=True
+        info = {}
+        return obs, info
 
     def step(self, action):
         pit = 1 if action == self.current_lap else 0
@@ -100,52 +97,42 @@ class F1PitStopEnv(gym.Env):
 
         return obs, reward, done, info
 
-# === TRAIN RL AGENT ===
+# === TRAIN RL AGENT === #
 train_agent = st.sidebar.button("🚀 Train RL Agent")
 run_simulation = st.sidebar.button("🏁 Run Simulation")
 
-# === TRAIN THE AGENT ===
 if train_agent:
     with st.spinner("Training RL agent..."):
         env = DummyVecEnv([lambda: F1PitStopEnv()])
         model = PPO("MlpPolicy", env, verbose=1)
         model.learn(total_timesteps=10000)
         model.save("ppo_f1_pit_agent")
-    st.sidebar.success("Training Complete! Model Saved ✅")
+    st.sidebar.success("Training Complete! Model Saved.")
 
-# === RUN SIMULATION WITH TRAINED AGENT ===
+# === RUN SIMULATION === #
 if run_simulation:
     with st.spinner("Running simulation with trained agent..."):
         env = DummyVecEnv([lambda: F1PitStopEnv()])
         model = PPO.load("ppo_f1_pit_agent")
 
-        obs = env.reset()   # DummyVecEnv.reset() returns obs only (no info)
+        obs = env.reset()
         pit_decisions = []
+
+        done = [False]
 
         for lap in range(race_length):
             action, _states = model.predict(obs)
-
-            # DummyVecEnv.step() returns 4 items: obs, rewards, dones, infos
             obs, rewards, dones, infos = env.step(action)
 
-            # DummyVecEnv returns batch-like structures; index them
             done = dones[0]
 
-            if int(action[0]) == lap:
+            if int(action) == lap:
                 pit_decisions.append(lap)
 
             if done:
-                st.sidebar.info(f"Simulation finished at lap {lap}")
                 break
 
-        # After the loop ends, show success
-        st.sidebar.success("🏁 Simulation Complete! See the results below 👇")
-
-        # You can now call your visualization block here
-        # (Laptime Plot, Tire Wear Plot, Fuel Load Plot, Pit Strategy)
-
-
-        # === RACE DATA ===
+        # === RACE DATA === #
         def generate_race_data():
             laps = np.arange(1, race_length + 1)
             lap_times = np.random.normal(90, 2, size=race_length)
@@ -156,7 +143,7 @@ if run_simulation:
 
         laps, lap_times, lead_delta, tire_wear, fuel_load = generate_race_data()
 
-        # === VISUALS ===
+        # === VISUALS === #
         col1, col2 = st.columns(2)
 
         with col1:
@@ -245,7 +232,7 @@ if run_simulation:
             )
             st.plotly_chart(fig_fuel_load, use_container_width=True)
 
-        # === PIT STRATEGY VISUAL ===
+        # === PIT STRATEGY VISUAL === #
         st.subheader("🔧 Pit Stop Strategy")
         st.markdown(f"Pit Stops at Laps: {pit_decisions}")
 
@@ -269,4 +256,3 @@ if run_simulation:
         st.plotly_chart(fig_pit, use_container_width=True)
 
         st.sidebar.success("Simulation Complete!")
-
