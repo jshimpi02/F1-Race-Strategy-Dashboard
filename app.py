@@ -29,10 +29,8 @@ teams = {
 selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
 selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
 degradation_base = teams[selected_team]["degradation_factor"]
-team_colors = teams[selected_team]["color"]
-
-# === Team Logo ===
 team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
+team_colors = teams[selected_team]["color"]
 st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
@@ -49,7 +47,7 @@ driver_profiles = {
 }
 profile = driver_profiles[selected_driver]
 
-# === Driver Photo ===
+# === DRIVER PHOTO ===
 driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
 st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
@@ -92,144 +90,159 @@ class F1PitStopEnv(gym.Env):
         self.current_lap += 1
         done = self.current_lap >= race_length
         obs = np.array([self.current_lap / race_length, lap_time / 120, pit], dtype=np.float32)
-        return obs, reward, done, False, {}
+        return obs, reward, done, {}
 
 # === TRAIN RL AGENT ===
-with st.spinner("Training RL Agent... Please wait."):
-    env = DummyVecEnv([lambda: F1PitStopEnv()])
-    model = PPO("MlpPolicy", env, verbose=0)
-    model.learn(total_timesteps=5000)
-    model.save("ppo_f1_pit_agent")
-    st.success("Training Complete! 🚀")
+train_agent = st.sidebar.button("🚀 Train RL Agent")
+run_simulation = st.sidebar.button("🏁 Run Simulation")
 
-# === SIMULATE RL AGENT PIT STRATEGY ===
-pit_decisions = []
-obs = env.reset()
-for lap in range(race_length):
-    action, _states = model.predict(obs)
-    obs, reward, done, truncated, info = env.step(action)
-    if int(action) == lap:
-        pit_decisions.append(lap)
+if train_agent:
+    with st.spinner("Training RL agent..."):
+        env = DummyVecEnv([lambda: F1PitStopEnv()])
+        model = PPO("MlpPolicy", env, verbose=1)
+        model.learn(total_timesteps=10000)
+        model.save("ppo_f1_pit_agent")
+    st.sidebar.success("Training Complete! Model Saved.")
 
-# === RACE DATA ===
-def generate_race_data():
-    laps = np.arange(1, race_length + 1)
-    lap_times = np.random.normal(90, 2, size=race_length)
-    lead_delta = np.cumsum(np.random.normal(0, 1, size=race_length))
-    tire_wear = np.maximum(0, 100 - degradation_base * laps * 100)
-    fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
-    return laps, lap_times, lead_delta, tire_wear, fuel_load
+if run_simulation:
+    with st.spinner("Running simulation with trained agent..."):
+        env = DummyVecEnv([lambda: F1PitStopEnv()])
+        model = PPO.load("ppo_f1_pit_agent")
 
-laps, lap_times, lead_delta, tire_wear, fuel_load = generate_race_data()
+        obs = env.reset()
+        pit_decisions = []
 
-# === VISUALS ===
-col1, col2 = st.columns(2)
+        for lap in range(race_length):
+            action, _states = model.predict(obs)
+            obs, reward, done, info = env.step(action)
 
-with col1:
-    fig_lap_times = go.Figure()
-    fig_lap_times.add_trace(go.Scatter(
-        x=laps,
-        y=lap_times,
-        mode='lines+markers',
-        name='Lap Times',
-        line=dict(color=team_colors[0], width=3)
-    ))
-    fig_lap_times.update_layout(
-        title='Lap Times Over Race',
-        template='plotly_dark',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        xaxis_title='Lap',
-        yaxis_title='Time (s)',
-        height=400
-    )
-    st.plotly_chart(fig_lap_times, use_container_width=True)
+            if int(action) == lap:
+                pit_decisions.append(lap)
 
-with col2:
-    fig_position_delta = go.Figure()
-    fig_position_delta.add_trace(go.Scatter(
-        x=laps,
-        y=lead_delta,
-        mode='lines+markers',
-        name='Position Delta',
-        line=dict(color=team_colors[1], width=3)
-    ))
-    fig_position_delta.update_layout(
-        title='Track Position Delta Over Race',
-        template='plotly_dark',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        xaxis_title='Lap',
-        yaxis_title='Time Delta (s)',
-        height=400
-    )
-    st.plotly_chart(fig_position_delta, use_container_width=True)
+            if done:
+                break
 
-col3, col4 = st.columns(2)
+        # === RACE DATA ===
+        def generate_race_data():
+            laps = np.arange(1, race_length + 1)
+            lap_times = np.random.normal(90, 2, size=race_length)
+            lead_delta = np.cumsum(np.random.normal(0, 1, size=race_length))
+            tire_wear = np.maximum(0, 100 - degradation_base * laps * 100)
+            fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
+            return laps, lap_times, lead_delta, tire_wear, fuel_load
 
-with col3:
-    fig_tire_wear = go.Figure()
-    fig_tire_wear.add_trace(go.Scatter(
-        x=laps,
-        y=tire_wear,
-        mode='lines+markers',
-        name='Tire Wear (%)',
-        line=dict(color='orange', width=3)
-    ))
-    fig_tire_wear.update_layout(
-        title='Tire Wear Over Race',
-        template='plotly_dark',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        xaxis_title='Lap',
-        yaxis_title='Tire Wear (%)',
-        height=400
-    )
-    st.plotly_chart(fig_tire_wear, use_container_width=True)
+        laps, lap_times, lead_delta, tire_wear, fuel_load = generate_race_data()
 
-with col4:
-    fig_fuel_load = go.Figure()
-    fig_fuel_load.add_trace(go.Scatter(
-        x=laps,
-        y=fuel_load,
-        mode='lines+markers',
-        name='Fuel Load (%)',
-        line=dict(color='yellow', width=3)
-    ))
-    fig_fuel_load.update_layout(
-        title='Fuel Load Over Race',
-        template='plotly_dark',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        xaxis_title='Lap',
-        yaxis_title='Fuel Load (%)',
-        height=400
-    )
-    st.plotly_chart(fig_fuel_load, use_container_width=True)
+        # === VISUALS ===
+        col1, col2 = st.columns(2)
 
-# === PIT STRATEGY VISUAL ===
-st.subheader("🔧 Pit Stop Strategy")
-st.markdown(f"Pit Stops at Laps: {pit_decisions}")
+        with col1:
+            fig_lap_times = go.Figure()
+            fig_lap_times.add_trace(go.Scatter(
+                x=laps,
+                y=lap_times,
+                mode='lines+markers',
+                name='Lap Times',
+                line=dict(color=team_colors[0], width=3)
+            ))
+            fig_lap_times.update_layout(
+                title='Lap Times Over Race',
+                template='plotly_dark',
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='white'),
+                xaxis_title='Lap',
+                yaxis_title='Time (s)',
+                height=400
+            )
+            st.plotly_chart(fig_lap_times, use_container_width=True)
 
-fig_pit = go.Figure()
-fig_pit.add_trace(go.Scatter(
-    x=pit_decisions,
-    y=[pit_stop_time for _ in pit_decisions],
-    mode='markers',
-    marker=dict(size=12, color='red'),
-    name='Pit Stops'
-))
-fig_pit.update_layout(
-    template='plotly_dark',
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    font=dict(color='white'),
-    xaxis_title='Lap',
-    yaxis_title='Pit Stop Time (s)',
-    height=400
-)
-st.plotly_chart(fig_pit, use_container_width=True)
+        with col2:
+            fig_position_delta = go.Figure()
+            fig_position_delta.add_trace(go.Scatter(
+                x=laps,
+                y=lead_delta,
+                mode='lines+markers',
+                name='Position Delta',
+                line=dict(color=team_colors[1], width=3)
+            ))
+            fig_position_delta.update_layout(
+                title='Track Position Delta Over Race',
+                template='plotly_dark',
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='white'),
+                xaxis_title='Lap',
+                yaxis_title='Time Delta (s)',
+                height=400
+            )
+            st.plotly_chart(fig_position_delta, use_container_width=True)
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            fig_tire_wear = go.Figure()
+            fig_tire_wear.add_trace(go.Scatter(
+                x=laps,
+                y=tire_wear,
+                mode='lines+markers',
+                name='Tire Wear (%)',
+                line=dict(color='orange', width=3)
+            ))
+            fig_tire_wear.update_layout(
+                title='Tire Wear Over Race',
+                template='plotly_dark',
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='white'),
+                xaxis_title='Lap',
+                yaxis_title='Tire Wear (%)',
+                height=400
+            )
+            st.plotly_chart(fig_tire_wear, use_container_width=True)
+
+        with col4:
+            fig_fuel_load = go.Figure()
+            fig_fuel_load.add_trace(go.Scatter(
+                x=laps,
+                y=fuel_load,
+                mode='lines+markers',
+                name='Fuel Load (%)',
+                line=dict(color='yellow', width=3)
+            ))
+            fig_fuel_load.update_layout(
+                title='Fuel Load Over Race',
+                template='plotly_dark',
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='white'),
+                xaxis_title='Lap',
+                yaxis_title='Fuel Load (%)',
+                height=400
+            )
+            st.plotly_chart(fig_fuel_load, use_container_width=True)
+
+        # === PIT STRATEGY VISUAL ===
+        st.subheader("🔧 Pit Stop Strategy")
+        st.markdown(f"Pit Stops at Laps: {pit_decisions}")
+
+        fig_pit = go.Figure()
+        fig_pit.add_trace(go.Scatter(
+            x=pit_decisions,
+            y=[pit_stop_time for _ in pit_decisions],
+            mode='markers',
+            marker=dict(size=12, color='red'),
+            name='Pit Stops'
+        ))
+        fig_pit.update_layout(
+            template='plotly_dark',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white'),
+            xaxis_title='Lap',
+            yaxis_title='Pit Stop Time (s)',
+            height=400
+        )
+        st.plotly_chart(fig_pit, use_container_width=True)
+
+        st.sidebar.success("Simulation Complete!")
