@@ -1,7 +1,7 @@
 streamlit
-matplotlib
+stable-baselines3>=2.2.1
+gymnasium>=0.28
+plotly
 numpy
 pandas
-stable-baselines3==2.2.1
-gymnasium==0.29.1
-plotly==5.18.0
+
