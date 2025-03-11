@@ -29,8 +29,10 @@ teams = {
 selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
 selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
 degradation_base = teams[selected_team]["degradation_factor"]
-team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
 team_colors = teams[selected_team]["color"]
+
+# === Team Logo ===
+team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
 st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
@@ -47,7 +49,7 @@ driver_profiles = {
 }
 profile = driver_profiles[selected_driver]
 
-# === DRIVER PHOTO ===
+# === Driver Photo ===
 driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
 st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
@@ -93,14 +95,16 @@ class F1PitStopEnv(gym.Env):
         return obs, reward, done, False, {}
 
 # === TRAIN RL AGENT ===
-env = DummyVecEnv([lambda: F1PitStopEnv()])
-model = PPO("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=10000)
-model.save("ppo_f1_pit_agent")
+with st.spinner("Training RL Agent... Please wait."):
+    env = DummyVecEnv([lambda: F1PitStopEnv()])
+    model = PPO("MlpPolicy", env, verbose=0)
+    model.learn(total_timesteps=5000)
+    model.save("ppo_f1_pit_agent")
+    st.success("Training Complete! 🚀")
 
 # === SIMULATE RL AGENT PIT STRATEGY ===
 pit_decisions = []
-obs, _ = env.reset()
+obs = env.reset()
 for lap in range(race_length):
     action, _states = model.predict(obs)
     obs, reward, done, truncated, info = env.step(action)
