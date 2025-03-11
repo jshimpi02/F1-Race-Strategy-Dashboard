@@ -119,12 +119,20 @@ if run_simulation:
         obs, _ = env.reset()
         pit_decisions = []
 
+        pit_decisions = []
+        obs = env.reset()
+
         for lap in range(race_length):
             action, _states = model.predict(obs)
-            obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-        if done:
+            obs, rewards, done, truncated, infos = env.step(action)
+
+        if int(action) == lap:
+            pit_decisions.append(lap)
+
+        if done or truncated:
             break
+
+            
 
         # === RACE DATA ===
         def generate_race_data():
