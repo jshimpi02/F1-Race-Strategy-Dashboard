@@ -114,7 +114,7 @@ if run_simulation:
 
         for lap in range(race_length):
             action, _states = model.predict(obs)
-             obs, rewards, dones, infos = env.step(action)
+            obs, rewards, dones, infos = env.step(action)
 
             if int(action) == lap:
                 pit_decisions.append(lap)
