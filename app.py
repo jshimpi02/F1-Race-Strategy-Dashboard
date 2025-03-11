@@ -75,12 +75,13 @@ class F1PitStopEnv(gym.Env):
         self.observation_space = spaces.Box(low=0, high=1, shape=(3,), dtype=np.float32)
         self.reset()
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
         self.current_lap = 0
         self.total_time = 0
         self.pit_strategy = []
         obs = np.array([0, 0, 0], dtype=np.float32)
-        return obs
+        info = {}
+        return obs, info
 
     def step(self, action):
         pit = 1 if action == self.current_lap else 0
@@ -88,12 +89,13 @@ class F1PitStopEnv(gym.Env):
         self.total_time += lap_time
         reward = -lap_time
         self.current_lap += 1
-        done = self.current_lap >= race_length
+        terminated = self.current_lap >= race_length
+        truncated = False
 
         obs = np.array([self.current_lap / race_length, lap_time / 120, pit], dtype=np.float32)
         info = {}
 
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
 # === TRAIN RL AGENT ===
 train_agent = st.sidebar.button("🚀 Train RL Agent")
@@ -112,17 +114,18 @@ if run_simulation:
         env = DummyVecEnv([lambda: F1PitStopEnv()])
         model = PPO.load("ppo_f1_pit_agent")
 
-        obs = env.reset()
+        obs, _ = env.reset()
         pit_decisions = []
 
         for lap in range(race_length):
             action, _states = model.predict(obs)
-            obs, rewards, dones, infos = env.step(action)
+            obs, rewards, terminated, truncated, infos = env.step(action)
+            done = terminated or truncated
 
             if int(action) == lap:
                 pit_decisions.append(lap)
 
-            if dones:
+            if done:
                 break
 
         # === RACE DATA ===
@@ -225,7 +228,6 @@ if run_simulation:
             )
             st.plotly_chart(fig_fuel_load, use_container_width=True)
 
-        # === PIT STRATEGY VISUAL ===
         st.subheader("🔧 Pit Stop Strategy")
         st.markdown(f"Pit Stops at Laps: {pit_decisions}")
 
