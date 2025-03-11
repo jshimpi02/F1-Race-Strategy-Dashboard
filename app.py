@@ -29,25 +29,31 @@ teams = {
 selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
 selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
 degradation_base = teams[selected_team]["degradation_factor"]
-team_logo = teams[selected_team]["logo"]
-st.sidebar.image(team_logo, caption=selected_team, use_container_width=True)
+#team_logo = teams[selected_team]["logo"]
+team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
+#st.sidebar.image(team_logo, caption=selected_team, use_container_width=True)
+st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
+
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
 # === DRIVER PROFILES ===
 driver_profiles = {
-    "Lewis Hamilton": {"skill": 0.95, "aggression": 0.4, "wet_skill": 0.9, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Lewis_Hamilton_2022.jpg/440px-Lewis_Hamilton_2022.jpg"},
-    "George Russell": {"skill": 0.90, "aggression": 0.3, "wet_skill": 0.85, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/George_Russell_2021.jpg/440px-George_Russell_2021.jpg"},
-    "Max Verstappen": {"skill": 0.97, "aggression": 0.5, "wet_skill": 0.85, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Max_Verstappen_2017_Malaysia_3.jpg/440px-Max_Verstappen_2017_Malaysia_3.jpg"},
-    "Sergio Perez": {"skill": 0.91, "aggression": 0.35, "wet_skill": 0.80, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Sergio_P%C3%A9rez_2022.jpg/440px-Sergio_P%C3%A9rez_2022.jpg"},
-    "Charles Leclerc": {"skill": 0.93, "aggression": 0.6, "wet_skill": 0.8, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Charles_Leclerc_2019.jpg/440px-Charles_Leclerc_2019.jpg"},
-    "Carlos Sainz": {"skill": 0.92, "aggression": 0.4, "wet_skill": 0.83, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Carlos_Sainz_2021.jpg/440px-Carlos_Sainz_2021.jpg"},
-    "Lando Norris": {"skill": 0.89, "aggression": 0.45, "wet_skill": 0.82, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Lando_Norris_2021.jpg/440px-Lando_Norris_2021.jpg"},
-    "Oscar Piastri": {"skill": 0.88, "aggression": 0.38, "wet_skill": 0.81, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Oscar_Piastri_2023.jpg/440px-Oscar_Piastri_2023.jpg"}
+    "Lewis Hamilton": {"skill": 0.95, "aggression": 0.4, "wet_skill": 0.9},
+    "George Russell": {"skill": 0.90, "aggression": 0.3, "wet_skill": 0.85},
+    "Max Verstappen": {"skill": 0.97, "aggression": 0.5, "wet_skill": 0.85},
+    "Sergio Perez": {"skill": 0.91, "aggression": 0.35, "wet_skill": 0.80},
+    "Charles Leclerc": {"skill": 0.93, "aggression": 0.6, "wet_skill": 0.8},
+    "Carlos Sainz": {"skill": 0.92, "aggression": 0.4, "wet_skill": 0.83},
+    "Lando Norris": {"skill": 0.89, "aggression": 0.45, "wet_skill": 0.82},
+    "Oscar Piastri": {"skill": 0.88, "aggression": 0.38, "wet_skill": 0.81}
 }
 profile = driver_profiles[selected_driver]
 
 # === DRIVER PHOTO ===
-st.sidebar.image(profile["photo"], caption=selected_driver, use_container_width=True)
+driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
+st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
+
+#st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
 # === SIMULATION SETTINGS ===
 st.sidebar.header("⚙️ Simulation Settings")
