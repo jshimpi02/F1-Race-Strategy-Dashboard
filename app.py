@@ -80,7 +80,7 @@ class F1PitStopEnv(gym.Env):
         self.total_time = 0
         self.pit_strategy = []
         obs = np.array([0, 0, 0], dtype=np.float32)
-        return obs, {}
+        return obs
 
     def step(self, action):
         pit = 1 if action == self.current_lap else 0
@@ -89,8 +89,11 @@ class F1PitStopEnv(gym.Env):
         reward = -lap_time
         self.current_lap += 1
         done = self.current_lap >= race_length
+
         obs = np.array([self.current_lap / race_length, lap_time / 120, pit], dtype=np.float32)
-        return obs, reward, done, {}
+        info = {}
+
+        return obs, reward, done, info
 
 # === TRAIN RL AGENT ===
 train_agent = st.sidebar.button("🚀 Train RL Agent")
@@ -119,7 +122,7 @@ if run_simulation:
             if int(action) == lap:
                 pit_decisions.append(lap)
 
-            if done:
+            if dones:
                 break
 
         # === RACE DATA ===
