@@ -100,37 +100,50 @@ class F1PitStopEnv(gym.Env):
 
         return obs, reward, done, info
 
-# === TRAIN & SIMULATION BUTTONS ===
+# === TRAIN RL AGENT ===
 train_agent = st.sidebar.button("🚀 Train RL Agent")
 run_simulation = st.sidebar.button("🏁 Run Simulation")
 
-# === TRAIN AGENT ===
+# === TRAIN THE AGENT ===
 if train_agent:
     with st.spinner("Training RL agent..."):
         env = DummyVecEnv([lambda: F1PitStopEnv()])
         model = PPO("MlpPolicy", env, verbose=1)
         model.learn(total_timesteps=10000)
         model.save("ppo_f1_pit_agent")
-    st.sidebar.success("Training Complete! Model Saved.")
+    st.sidebar.success("Training Complete! Model Saved ✅")
 
-# === RUN SIMULATION ===
+# === RUN SIMULATION WITH TRAINED AGENT ===
 if run_simulation:
     with st.spinner("Running simulation with trained agent..."):
         env = DummyVecEnv([lambda: F1PitStopEnv()])
         model = PPO.load("ppo_f1_pit_agent")
 
-        obs = env.reset()  # Gym returns just obs now
+        obs = env.reset()   # DummyVecEnv.reset() returns obs only (no info)
         pit_decisions = []
 
         for lap in range(race_length):
             action, _states = model.predict(obs)
-            obs, rewards, done, info = env.step(action)
 
-            if int(action) == lap:
+            # DummyVecEnv.step() returns 4 items: obs, rewards, dones, infos
+            obs, rewards, dones, infos = env.step(action)
+
+            # DummyVecEnv returns batch-like structures; index them
+            done = dones[0]
+
+            if int(action[0]) == lap:
                 pit_decisions.append(lap)
 
             if done:
-                break  # Correctly placed inside loop!
+                st.sidebar.info(f"Simulation finished at lap {lap}")
+                break
+
+        # After the loop ends, show success
+        st.sidebar.success("🏁 Simulation Complete! See the results below 👇")
+
+        # You can now call your visualization block here
+        # (Laptime Plot, Tire Wear Plot, Fuel Load Plot, Pit Strategy)
+
 
         # === RACE DATA ===
         def generate_race_data():
