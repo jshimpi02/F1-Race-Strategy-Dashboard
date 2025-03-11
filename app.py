@@ -1,5 +1,7 @@
 import os
 os.environ["PYTORCH_JIT"] = "0"
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 import logging
 logging.getLogger("torch").setLevel(logging.ERROR)
 
