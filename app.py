@@ -1,140 +1,176 @@
-# === Imports ===
 import os
 os.environ["PYTORCH_JIT"] = "0"
+
+# Ensure cache directory exists
+if not os.path.exists('./cache'):
+    os.makedirs('./cache')
 
 import streamlit as st
 import numpy as np
 import pandas as pd
-import fastf1
 import plotly.graph_objects as go
-import plotly.express as px
+import pygad
+import fastf1
+from fastf1 import plotting
 from datetime import datetime
 
-# === Streamlit Setup ===
-st.set_page_config(page_title="🏎️ F1 Race Strategy & Live Telemetry", layout="wide")
-st.title("🏎️ F1 Race Strategy & Live Telemetry Dashboard")
+# Enable FastF1 cache
+fastf1.Cache.enable_cache('./cache')
+
+# ============================ STREAMLIT CONFIG ============================
+st.set_page_config(page_title="🏎️ F1 Race Strategy Dashboard", layout="wide")
+st.title("🏎️ F1 Race Strategy Simulator + Telemetry + GA Optimization")
 st.markdown("---")
 
-# === TEAM & DRIVER SELECTION ===
+# ============================ TEAM & DRIVER SELECTION ============================
+st.sidebar.header("🏎️ Team & Driver Selection")
+
 teams = {
-    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "color": ["#00D2BE", "#FFFFFF"]},
-    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "color": ["#1E41FF", "#FFD700"]},
-    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "color": ["#DC0000", "#FFFFFF"]},
-    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "color": ["#FF8700", "#FFFFFF"]}
+    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "color": ["#00D2BE", "#FFFFFF"]},
+    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15, "color": ["#1E41FF", "#FFD700"]},
+    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25, "color": ["#DC0000", "#FFFFFF"]},
+    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30, "color": ["#FF8700", "#FFFFFF"]}
 }
 
-selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
-selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
+selected_team = st.sidebar.selectbox("Select Team", list(teams.keys()))
+selected_driver = st.sidebar.selectbox("Select Driver", teams[selected_team]["drivers"])
+degradation_base = teams[selected_team]["degradation_factor"]
 team_colors = teams[selected_team]["color"]
 
-# === Team Logo & Driver Photo ===
 team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
 driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
 
 st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
 st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
-# Make sure cache directory exists
-if not os.path.exists('./cache'):
-    os.makedirs('./cache')
+# ============================ SIMULATION SETTINGS ============================
+st.sidebar.header("⚙️ Simulation Settings")
+race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
+pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
+weather_types = ["Clear", "Light Rain", "Heavy Rain", "Dynamic Weather"]
+selected_weather = st.sidebar.selectbox("Select Weather", weather_types)
 
-# === FASTF1 DATASET SETUP ===
-fastf1.Cache.enable_cache('./cache')  # Optional: Enable caching to speed up loading
+# ============================ TIRE COMPOUND SELECTION ============================
+st.sidebar.header("🚾 Tire Compound Selection")
+tire_options = {"Soft": 0.40, "Medium": 0.25, "Hard": 0.15}
+selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options.keys()))
 
-year = 2023
-race = 'Bahrain Grand Prix'
-session_type = st.sidebar.selectbox("Select Session", ['FP1', 'FP2', 'FP3', 'Q', 'R'])
+# ============================ RACE LOGIC FUNCTIONS ============================
+def get_weather_factor(weather):
+    if weather == "Clear":
+        return 1.0
+    elif weather == "Light Rain":
+        return 1.1
+    elif weather == "Heavy Rain":
+        return 1.25
+    elif weather == "Dynamic Weather":
+        return np.random.choice([1.0, 1.1, 1.25])
+    return 1.0
 
-with st.spinner(f"Loading session data for {race} - {session_type}..."):
-    session = fastf1.get_session(year, race, session_type)
+def simulate_race(pit_laps):
+    lap_times = []
+    tire_wear = 100.0
+    fuel_load = 100.0
+    current_weather = get_weather_factor(selected_weather)
+
+    for lap in range(1, race_length + 1):
+        degradation = degradation_base * (lap if lap <= race_length else race_length)
+        tire_wear = max(0, tire_wear - degradation * 100)
+        fuel_load = max(0, fuel_load - (100 / race_length))
+
+        base_time = 90
+        lap_time = base_time + degradation * 20 + current_weather * 5 + (100 - tire_wear) * 0.1
+        if lap in pit_laps:
+            lap_time += pit_stop_time
+            tire_wear = 100  # reset tire after pit stop
+
+        lap_times.append(lap_time)
+    return np.sum(lap_times), lap_times
+
+# ============================ GENETIC ALGORITHM FITNESS ============================
+def fitness_func(ga_instance, solution, solution_idx):
+    pit_laps = [int(lap) for lap in solution if 1 <= lap <= race_length]
+    total_time, _ = simulate_race(pit_laps)
+    return -total_time  # minimize total race time
+
+# ============================ RUN GA OPTIMIZATION ============================
+def run_ga():
+    st.info("Running Genetic Algorithm to optimize pit stops...")
+    num_generations = 50
+    num_parents_mating = 5
+    sol_per_pop = 10
+    num_genes = 3  # Number of pit stops (laps)
+
+    ga_instance = pygad.GA(
+        num_generations=num_generations,
+        num_parents_mating=num_parents_mating,
+        fitness_func=fitness_func,
+        sol_per_pop=sol_per_pop,
+        num_genes=num_genes,
+        gene_space={"low": 1, "high": race_length},
+        parent_selection_type="rank",
+        crossover_type="single_point",
+        mutation_type="random",
+        mutation_percent_genes=30,
+        stop_criteria="saturate"
+    )
+
+    ga_instance.run()
+    solution, solution_fitness, _ = ga_instance.best_solution()
+    best_pit_laps = sorted([int(lap) for lap in solution])
+
+    st.success(f"Best Pit Stop Laps: {best_pit_laps}")
+    return best_pit_laps
+
+# ============================ FETCH FASTF1 TELEMETRY ============================
+def load_telemetry(season=2023, round_number=1):
+    st.info("Loading real telemetry data...")
+    session = fastf1.get_session(season, round_number, 'R')
     session.load()
+    lap_data = session.laps.pick_driver(selected_driver.split()[-1][:3].upper())
+    return lap_data
 
-drivers = session.drivers
-driver_dict = {}
-for drv in drivers:
-    driver_dict[drv] = session.get_driver(drv)['Abbreviation']
+# ============================ RUNNING EVERYTHING ============================
+if st.button("🏁 Run Race Simulation + Optimization"):
+    best_pit_laps = run_ga()
+    total_time, lap_times = simulate_race(best_pit_laps)
 
-selected_driver_abbr = driver_dict.get(selected_driver.split()[-1][:3].upper(), drivers[0])
+    laps = np.arange(1, race_length + 1)
+    tire_wear = np.maximum(0, 100 - degradation_base * laps * 100)
+    fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
 
-st.sidebar.markdown(f"**Session Loaded:** {session.event['EventName']} - {session_type}")
-
-# === LIVE TELEMETRY DATA ===
-laps = session.laps.pick_driver(selected_driver_abbr)
-
-if laps.empty:
-    st.warning("No lap data available for selected driver/session.")
-else:
-    fastest_lap = laps.pick_fastest()
-    st.markdown(f"🏁 Fastest Lap: **{fastest_lap['LapTime']}**")
-
-    telemetry = fastest_lap.get_car_data().add_distance()
-
-    # === Plot Speed Trace ===
-    fig_speed = go.Figure()
-    fig_speed.add_trace(go.Scatter(
-        x=telemetry['Distance'],
-        y=telemetry['Speed'],
-        mode='lines',
-        name='Speed (km/h)',
-        line=dict(color=team_colors[0], width=3)
-    ))
-    fig_speed.update_layout(
-        title=f"Speed Trace - {selected_driver}",
-        xaxis_title='Distance (m)',
-        yaxis_title='Speed (km/h)',
-        template='plotly_dark',
-        height=400
-    )
-
-    # === Plot Throttle & Brake ===
-    fig_throttle = go.Figure()
-    fig_throttle.add_trace(go.Scatter(
-        x=telemetry['Distance'],
-        y=telemetry['Throttle'],
-        mode='lines',
-        name='Throttle (%)',
-        line=dict(color='lime', width=3)
-    ))
-    fig_throttle.add_trace(go.Scatter(
-        x=telemetry['Distance'],
-        y=telemetry['Brake'],
-        mode='lines',
-        name='Brake (%)',
-        line=dict(color='red', width=3)
-    ))
-    fig_throttle.update_layout(
-        title=f"Throttle & Brake - {selected_driver}",
-        xaxis_title='Distance (m)',
-        yaxis_title='%',
-        template='plotly_dark',
-        height=400
-    )
-
-    # === Layout ===
+    # === PLOTLY GRAPHS ===
     col1, col2 = st.columns(2)
-    col1.plotly_chart(fig_speed, use_container_width=True)
-    col2.plotly_chart(fig_throttle, use_container_width=True)
 
-    # === LIVE POSITION TRACKING ===
-    driver_position_df = laps[['LapNumber', 'Position']]
+    with col1:
+        fig_lap_times = go.Figure()
+        fig_lap_times.add_trace(go.Scatter(x=laps, y=lap_times, mode='lines+markers', line=dict(color=team_colors[0], width=3)))
+        fig_lap_times.update_layout(title='Lap Times', template='plotly_dark', height=400)
+        st.plotly_chart(fig_lap_times, use_container_width=True)
 
-    fig_position = px.line(driver_position_df, x='LapNumber', y='Position',
-                           title=f"{selected_driver}'s Race Position Over Laps",
-                           markers=True,
-                           template='plotly_dark')
-    fig_position.update_layout(
-        yaxis=dict(autorange="reversed"),
-        height=400
-    )
-    st.plotly_chart(fig_position, use_container_width=True)
+    with col2:
+        fig_tire_wear = go.Figure()
+        fig_tire_wear.add_trace(go.Scatter(x=laps, y=tire_wear, mode='lines+markers', line=dict(color='orange', width=3)))
+        fig_tire_wear.update_layout(title='Tire Wear (%)', template='plotly_dark', height=400)
+        st.plotly_chart(fig_tire_wear, use_container_width=True)
 
-    # === LIVE LEADERBOARD ===
-    leaderboard_df = session.laps.groupby('Driver')['LapTime'].min().reset_index().sort_values(by='LapTime')
-    leaderboard_df['Driver'] = leaderboard_df['Driver'].map(lambda x: session.get_driver(x)['Abbreviation'])
+    col3, col4 = st.columns(2)
 
-    st.subheader("🏁 Leaderboard (Fastest Lap Times)")
-    st.dataframe(leaderboard_df, use_container_width=True)
+    with col3:
+        fig_fuel_load = go.Figure()
+        fig_fuel_load.add_trace(go.Scatter(x=laps, y=fuel_load, mode='lines+markers', line=dict(color='yellow', width=3)))
+        fig_fuel_load.update_layout(title='Fuel Load (%)', template='plotly_dark', height=400)
+        st.plotly_chart(fig_fuel_load, use_container_width=True)
 
-# === FOOTER ===
-st.markdown("---")
-st.caption("Developed using FastF1, Plotly & Streamlit ❤️")
+    with col4:
+        fig_pits = go.Figure()
+        fig_pits.add_trace(go.Scatter(x=best_pit_laps, y=[pit_stop_time]*len(best_pit_laps), mode='markers', marker=dict(size=12, color='red')))
+        fig_pits.update_layout(title='Pit Stops', template='plotly_dark', height=400)
+        st.plotly_chart(fig_pits, use_container_width=True)
+
+    st.success(f"Total Race Time: {total_time:.2f} seconds")
+
+# ============================ TELEMETRY DATA PLOT ============================
+if st.checkbox("Show Real Telemetry Data (FastF1)"):
+    telemetry = load_telemetry(season=2023, round_number=1)
+    st.write(telemetry[['LapTime', 'Compound', 'TyreLife']])
