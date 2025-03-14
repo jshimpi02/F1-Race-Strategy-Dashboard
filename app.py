@@ -34,6 +34,10 @@ driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}
 st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
 st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
+# Make sure cache directory exists
+if not os.path.exists('./cache'):
+    os.makedirs('./cache')
+
 # === FASTF1 DATASET SETUP ===
 fastf1.Cache.enable_cache('./cache')  # Optional: Enable caching to speed up loading
 
