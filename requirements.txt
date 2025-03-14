@@ -4,5 +4,6 @@ pygad
 numpy
 pandas
 pyngrok
+fastf1
 
 
