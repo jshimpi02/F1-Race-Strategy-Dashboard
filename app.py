@@ -6,12 +6,12 @@ import numpy as np
 import pandas as pd
 import random
 import plotly.graph_objects as go
-import requests
+from datetime import datetime
 import time
 
-# === STREAMLIT PAGE SETUP === #
+# === F1 Race Strategy Simulator with Live Telemetry + GA + Multi-Driver === #
 st.set_page_config(page_title="🏎️ F1 Race Strategy RL Dashboard", layout="wide")
-st.title("🏎️ F1 Race Strategy Simulator - RL Agent + Dynamic Weather + Incidents + Telemetry")
+st.title("🏎️ F1 Race Strategy Dashboard - GA Optimized + Live Telemetry + Multi-Driver")
 st.markdown("---")
 
 # === TEAM & DRIVER SELECTION === #
@@ -22,11 +22,13 @@ teams = {
     "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25, "color": ["#DC0000", "#FFFFFF"]},
     "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30, "color": ["#FF8700", "#FFFFFF"]}
 }
+
 selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
-selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
+selected_drivers = st.sidebar.multiselect("Select Drivers", teams[selected_team]["drivers"], default=teams[selected_team]["drivers"])
 degradation_base = teams[selected_team]["degradation_factor"]
 team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
 team_colors = teams[selected_team]["color"]
+
 st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
 st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
@@ -41,77 +43,137 @@ driver_profiles = {
     "Lando Norris": {"skill": 0.89, "aggression": 0.45, "wet_skill": 0.82},
     "Oscar Piastri": {"skill": 0.88, "aggression": 0.38, "wet_skill": 0.81}
 }
-profile = driver_profiles[selected_driver]
-
-# === DRIVER PHOTO === #
-driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
-st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
 # === SIMULATION SETTINGS === #
 st.sidebar.header("⚙️ Simulation Settings")
 race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
 pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
-num_opponents = 5
-
-# === WEATHER SETTINGS === #
-st.sidebar.header("🌦️ Weather Settings")
 weather_types = ["Clear", "Light Rain", "Heavy Rain", "Dynamic Weather"]
 selected_weather = st.sidebar.selectbox("Select Weather", weather_types)
 
-# === TELEMETRY DATA FETCHING === #
-def fetch_live_telemetry(driver="Max Verstappen"):
-    # Simulated for now, can be hooked to Ergast API or real F1 source
+def simulate_driver(driver):
+    skill = driver_profiles[driver]["skill"]
+    lap_times = []
+    tire_wear = []
+    fuel_load = []
+    speed_data = []
+    gear_data = []
+    rpm_data = []
+    throttle_data = []
+    brake_data = []
+    
+    for lap in range(1, race_length + 1):
+        base_time = 90
+        degradation = degradation_base * lap
+        weather_penalty = 5 if "Rain" in selected_weather else 0
+        lap_time = base_time + degradation + random.uniform(-1, 1) * (1 - skill) + weather_penalty
+        lap_times.append(lap_time)
+        tire_wear.append(max(0, 100 - degradation_base * lap * 100))
+        fuel_load.append(max(0, 100 - lap * (100 / race_length)))
+
+        # Live telemetry (simulated)
+        speed_data.append(random.randint(300, 360))
+        gear_data.append(random.randint(1, 8))
+        rpm_data.append(random.randint(11000, 15000))
+        throttle_data.append(random.uniform(0.7, 1.0))
+        brake_data.append(random.uniform(0.0, 0.3))
+        
     return {
-        "speed": random.randint(280, 350),
-        "gear": random.randint(5, 8),
-        "rpm": random.randint(10000, 15000),
-        "throttle": random.randint(70, 100),
-        "brake": random.randint(0, 30)
+        "laps": list(range(1, race_length + 1)),
+        "lap_times": lap_times,
+        "tire_wear": tire_wear,
+        "fuel_load": fuel_load,
+        "speed": speed_data,
+        "gear": gear_data,
+        "rpm": rpm_data,
+        "throttle": throttle_data,
+        "brake": brake_data
     }
 
-# === RACE SIMULATION === #
-st.header("🏁 Live Race Simulation")
-laps = np.arange(1, race_length + 1)
+# === GENETIC ALGORITHM PIT STRATEGY === #
+def fitness_func(solution, solution_idx):
+    pit_stops = solution
+    if not pit_stops:
+        return 1e-6
+    time_loss = len(pit_stops) * pit_stop_time
+    lap_penalty = sum([degradation_base * lap for lap in pit_stops])
+    total_time = race_length * 90 + time_loss + lap_penalty
+    return 1 / total_time
 
-speed_list = []
-throttle_list = []
-brake_list = []
+import pygad
 
-progress = st.progress(0, text=f"Starting race for {selected_driver}")
-status_placeholder = st.empty()
+num_pit_stops = 2
+ga_instance = pygad.GA(
+    num_generations=10,
+    num_parents_mating=5,
+    fitness_func=fitness_func,
+    sol_per_pop=10,
+    num_genes=num_pit_stops,
+    init_range_low=1,
+    init_range_high=race_length,
+    mutation_percent_genes=10
+)
 
-for lap in range(1, race_length + 1):
-    telemetry = fetch_live_telemetry(selected_driver)
+ga_instance.run()
+solution, solution_fitness, _ = ga_instance.best_solution()
+pit_decisions = sorted(list(map(int, solution)))
 
-    speed_list.append(telemetry["speed"])
-    throttle_list.append(telemetry["throttle"])
-    brake_list.append(telemetry["brake"])
+st.sidebar.subheader("Optimized Pit Stops")
+st.sidebar.write(f"Pit stops at laps: {pit_decisions}")
 
-    progress.progress(lap / race_length, text=f"Lap {lap}/{race_length}")
-    status_placeholder.info(f"Lap {lap}: Speed {telemetry['speed']} km/h | Gear {telemetry['gear']} | RPM {telemetry['rpm']}")
-    time.sleep(0.05)
+# === SIMULATE & PLOT === #
+st.header("📊 Race Simulation & Telemetry")
 
-# === LIVE TELEMETRY GRAPHS === #
-col1, col2 = st.columns(2)
+for driver in selected_drivers:
+    st.subheader(f"Driver: {driver}")
+    driver_data = simulate_driver(driver)
+    col1, col2 = st.columns(2)
 
-with col1:
-    fig_speed = go.Figure()
-    fig_speed.add_trace(go.Scatter(x=laps, y=speed_list, mode='lines+markers', name='Speed (km/h)', line=dict(color='cyan')))
-    fig_speed.update_layout(title="Speed over Laps", template="plotly_dark", height=400)
-    st.plotly_chart(fig_speed, use_container_width=True)
+    # Lap Times
+    with col1:
+        fig_lap_times = go.Figure(go.Scatter(
+            x=driver_data["laps"],
+            y=driver_data["lap_times"],
+            mode='lines+markers',
+            line=dict(color=team_colors[0], width=3)
+        ))
+        fig_lap_times.update_layout(title="Lap Times", template="plotly_dark")
+        st.plotly_chart(fig_lap_times, use_container_width=True)
 
-with col2:
-    fig_throttle_brake = go.Figure()
-    fig_throttle_brake.add_trace(go.Scatter(x=laps, y=throttle_list, mode='lines', name='Throttle (%)', line=dict(color='green')))
-    fig_throttle_brake.add_trace(go.Scatter(x=laps, y=brake_list, mode='lines', name='Brake (%)', line=dict(color='red')))
-    fig_throttle_brake.update_layout(title="Throttle & Brake over Laps", template="plotly_dark", height=400)
-    st.plotly_chart(fig_throttle_brake, use_container_width=True)
+    # Tire Wear
+    with col2:
+        fig_tire = go.Figure(go.Scatter(
+            x=driver_data["laps"],
+            y=driver_data["tire_wear"],
+            mode='lines+markers',
+            line=dict(color="orange", width=3)
+        ))
+        fig_tire.update_layout(title="Tire Wear", template="plotly_dark")
+        st.plotly_chart(fig_tire, use_container_width=True)
 
-# === PIT STRATEGY PLACEHOLDER === #
-st.subheader("🔧 Pit Stop Strategy")
-pit_decisions = [random.choice(laps.tolist()) for _ in range(2)]
-st.markdown(f"Pit Stops at Laps: {pit_decisions}")
+    # Fuel Load
+    fig_fuel = go.Figure(go.Scatter(
+        x=driver_data["laps"],
+        y=driver_data["fuel_load"],
+        mode='lines+markers',
+        line=dict(color="yellow", width=3)
+    ))
+    fig_fuel.update_layout(title="Fuel Load", template="plotly_dark")
+    st.plotly_chart(fig_fuel, use_container_width=True)
 
+    # === Live Telemetry === #
+    st.subheader("Live Telemetry")
+    telemetry_df = pd.DataFrame({
+        "Lap": driver_data["laps"],
+        "Speed (km/h)": driver_data["speed"],
+        "Gear": driver_data["gear"],
+        "RPM": driver_data["rpm"],
+        "Throttle": driver_data["throttle"],
+        "Brake": driver_data["brake"]
+    })
+    st.dataframe(telemetry_df)
+
+# === PIT STRATEGY VISUAL === #
 fig_pit = go.Figure()
 fig_pit.add_trace(go.Scatter(
     x=pit_decisions,
@@ -120,15 +182,7 @@ fig_pit.add_trace(go.Scatter(
     marker=dict(size=12, color='red'),
     name='Pit Stops'
 ))
-fig_pit.update_layout(
-    template='plotly_dark',
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    font=dict(color='white'),
-    xaxis_title='Lap',
-    yaxis_title='Pit Stop Time (s)',
-    height=400
-)
+fig_pit.update_layout(title="Pit Stop Strategy", template="plotly_dark")
 st.plotly_chart(fig_pit, use_container_width=True)
 
 st.sidebar.success("Simulation Complete!")
