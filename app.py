@@ -4,13 +4,12 @@ os.environ["PYTORCH_JIT"] = "0"
 import streamlit as st
 import numpy as np
 import pandas as pd
-import random
 import plotly.graph_objects as go
 import pygad
 
 # === F1 Race Strategy Simulator === #
-st.set_page_config(page_title="🏎️ F1 GA Race Strategy Dashboard", layout="wide")
-st.title("🏎️ F1 Race Strategy Simulator - Genetic Algorithm Optimizer")
+st.set_page_config(page_title="🏎️ F1 Race Strategy GA Dashboard", layout="wide")
+st.title("🏎️ F1 Race Strategy Simulator - Genetic Algorithm + Dynamic Weather + Incidents")
 st.markdown("---")
 
 # === TEAM & DRIVER SELECTION === #
@@ -27,6 +26,7 @@ degradation_base = teams[selected_team]["degradation_factor"]
 team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
 team_colors = teams[selected_team]["color"]
 st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
+st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
 
 # === DRIVER PHOTO ===
 driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
@@ -35,146 +35,120 @@ st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width
 # === SIMULATION SETTINGS === #
 st.sidebar.header("⚙️ Simulation Settings")
 race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
-pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
-weather_penalty = st.sidebar.slider("Weather Penalty per Lap (seconds)", 0, 5, 2)
-num_pit_stops = st.sidebar.slider("Max Pit Stops", 1, 3, 2)
+pit_stop_time_loss = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
+base_lap_time = st.sidebar.slider("Base Lap Time (seconds)", 85, 100, 90)
+degradation_per_lap = st.sidebar.slider("Degradation Per Lap (seconds)", 0.1, 0.5, degradation_base)
 
-# === Genetic Algorithm Parameters === #
-st.sidebar.header("🧬 Genetic Algorithm Settings")
-population_size = st.sidebar.slider("Population Size", 10, 100, 30)
-generations = st.sidebar.slider("Generations", 10, 100, 50)
-mutation_probability = st.sidebar.slider("Mutation Probability", 0.01, 0.5, 0.1)
-
-# === FITNESS FUNCTION === #
-def fitness_func(solution, solution_idx):
-    pit_laps = sorted([int(round(gene)) for gene in solution])
-    
+# === GA FITNESS FUNCTION === #
+def fitness_func(ga_instance, solution, solution_idx):
     total_time = 0
     tire_wear = 0
-    
-    for lap in range(1, race_length + 1):
-        # Base lap time + degradation
-        lap_time = 90 + degradation_base * tire_wear
-        
-        # Add pit stop if lap matches
-        if lap in pit_laps:
-            lap_time += pit_stop_time
-            tire_wear = 0  # reset wear after pit
-        
-        # Weather impact
-        lap_time += weather_penalty
-        
+
+    for lap in range(race_length):
+        lap_time = base_lap_time + (degradation_per_lap * tire_wear)
         total_time += lap_time
-        tire_wear += 1
-    
-    return -total_time  # Maximize fitness by minimizing total time
 
-# === GENERATE INITIAL POPULATION === #
-initial_population = []
-for _ in range(population_size):
-    pits = sorted(random.sample(range(5, race_length - 5), num_pit_stops))
-    initial_population.append(pits)
-
-# === RUN GENETIC ALGORITHM === #
-def run_genetic_algorithm():
-    ga_instance = pygad.GA(
-        num_generations=generations,
-        num_parents_mating=population_size//2,
-        fitness_func=fitness_func,
-        sol_per_pop=population_size,
-        num_genes=num_pit_stops,
-        initial_population=initial_population,
-        mutation_probability=mutation_probability,
-        mutation_type="random",
-        gene_space={'low': 5, 'high': race_length - 5}
-    )
-    ga_instance.run()
-    return ga_instance
-
-optimize = st.sidebar.button("🚀 Optimize Pit Strategy")
-
-if optimize:
-    with st.spinner("Running Genetic Algorithm Optimization..."):
-        ga_instance = run_genetic_algorithm()
-        solution, solution_fitness, _ = ga_instance.best_solution()
-        best_pit_laps = sorted([int(round(g)) for g in solution])
-        st.sidebar.success(f"Optimization Complete! Best Strategy: {best_pit_laps}")
-
-        # === VISUALIZATION === #
-        laps = np.arange(1, race_length + 1)
-        lap_times = []
-        tire_wear = 0
-        for lap in laps:
-            lap_time = 90 + degradation_base * tire_wear
-            if lap in best_pit_laps:
-                lap_time += pit_stop_time
-                tire_wear = 0
-            lap_time += weather_penalty
-            lap_times.append(lap_time)
+        if solution[lap] > 0.5:
+            total_time += pit_stop_time_loss
+            tire_wear = 0
+        else:
             tire_wear += 1
 
-        tire_wear_values = [min(degradation_base * w * 100, 100) for w in range(race_length)]
-        fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
+    fitness = 1.0 / total_time
+    return fitness
 
+# === GA PARAMETERS === #
+st.sidebar.header("🧬 Genetic Algorithm Settings")
+num_generations = st.sidebar.slider("Generations", 50, 300, 100)
+pop_size = st.sidebar.slider("Population Size", 10, 50, 20)
+num_parents_mating = st.sidebar.slider("Parents Mating", 5, pop_size, 10)
+
+# === TRAIN GA === #
+train_ga = st.sidebar.button("🚀 Run Genetic Algorithm")
+
+if train_ga:
+    with st.spinner("Running Genetic Algorithm..."):
+
+        ga_instance = pygad.GA(
+            num_generations=num_generations,
+            num_parents_mating=num_parents_mating,
+            fitness_func=fitness_func,
+            sol_per_pop=pop_size,
+            num_genes=race_length,
+            init_range_low=0,
+            init_range_high=1,
+            mutation_probability=0.1,
+            gene_type=int
+        )
+
+        ga_instance.run()
+        ga_instance.plot_fitness(title="GA - Fitness over Generations")
+
+        solution, solution_fitness, solution_idx = ga_instance.best_solution()
+        pit_decisions = [i+1 for i, val in enumerate(solution) if val == 1]
+
+        st.sidebar.success("GA Optimization Complete!")
+        st.sidebar.markdown(f"Best Fitness: **{solution_fitness:.5f}**")
+        st.sidebar.markdown(f"Total Race Time: **{1/solution_fitness:.2f} sec**")
+
+        # === RACE DATA === #
+        def generate_race_data():
+            laps = np.arange(1, race_length + 1)
+            lap_times = []
+            tire_wear = 0
+            for lap in laps:
+                lap_time = base_lap_time + (degradation_per_lap * tire_wear)
+                if lap in pit_decisions:
+                    lap_time += pit_stop_time_loss
+                    tire_wear = 0
+                else:
+                    tire_wear += 1
+                lap_times.append(lap_time)
+
+            lap_times = np.array(lap_times)
+            lead_delta = np.cumsum(np.random.normal(0, 1, size=race_length))
+            tire_wear_values = np.maximum(0, 100 - degradation_per_lap * laps * 100)
+            fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
+            return laps, lap_times, lead_delta, tire_wear_values, fuel_load
+
+        laps, lap_times, lead_delta, tire_wear_values, fuel_load = generate_race_data()
+
+        # === VISUALS === #
         col1, col2 = st.columns(2)
 
         with col1:
             fig_lap_times = go.Figure()
-            fig_lap_times.add_trace(go.Scatter(
-                x=laps,
-                y=lap_times,
-                mode='lines+markers',
-                name='Lap Times',
-                line=dict(color=team_colors[0], width=3)
-            ))
-            fig_lap_times.update_layout(
-                title=f'Lap Times for {selected_driver}',
-                template='plotly_dark',
-                height=400
-            )
+            fig_lap_times.add_trace(go.Scatter(x=laps, y=lap_times, mode='lines+markers', name='Lap Times', line=dict(color=team_colors[0], width=3)))
+            fig_lap_times.update_layout(title='Lap Times Over Race', template='plotly_dark', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'), xaxis_title='Lap', yaxis_title='Time (s)', height=400)
             st.plotly_chart(fig_lap_times, use_container_width=True)
 
         with col2:
+            fig_position_delta = go.Figure()
+            fig_position_delta.add_trace(go.Scatter(x=laps, y=lead_delta, mode='lines+markers', name='Position Delta', line=dict(color=team_colors[1], width=3)))
+            fig_position_delta.update_layout(title='Track Position Delta Over Race', template='plotly_dark', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'), xaxis_title='Lap', yaxis_title='Time Delta (s)', height=400)
+            st.plotly_chart(fig_position_delta, use_container_width=True)
+
+        col3, col4 = st.columns(2)
+
+        with col3:
             fig_tire_wear = go.Figure()
-            fig_tire_wear.add_trace(go.Scatter(
-                x=laps,
-                y=tire_wear_values,
-                mode='lines+markers',
-                name='Tire Wear',
-                line=dict(color='orange', width=3)
-            ))
-            fig_tire_wear.update_layout(
-                title='Tire Wear Over Laps',
-                template='plotly_dark',
-                height=400
-            )
+            fig_tire_wear.add_trace(go.Scatter(x=laps, y=tire_wear_values, mode='lines+markers', name='Tire Wear (%)', line=dict(color='orange', width=3)))
+            fig_tire_wear.update_layout(title='Tire Wear Over Race', template='plotly_dark', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'), xaxis_title='Lap', yaxis_title='Tire Wear (%)', height=400)
             st.plotly_chart(fig_tire_wear, use_container_width=True)
 
-        fig_pit_strategy = go.Figure()
-        fig_pit_strategy.add_trace(go.Scatter(
-            x=best_pit_laps,
-            y=[pit_stop_time]*len(best_pit_laps),
-            mode='markers',
-            marker=dict(size=12, color='red'),
-            name='Pit Stops'
-        ))
-        fig_pit_strategy.update_layout(
-            title='Pit Stop Strategy',
-            template='plotly_dark',
-            height=400
-        )
-        st.plotly_chart(fig_pit_strategy, use_container_width=True)
+        with col4:
+            fig_fuel_load = go.Figure()
+            fig_fuel_load.add_trace(go.Scatter(x=laps, y=fuel_load, mode='lines+markers', name='Fuel Load (%)', line=dict(color='yellow', width=3)))
+            fig_fuel_load.update_layout(title='Fuel Load Over Race', template='plotly_dark', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'), xaxis_title='Lap', yaxis_title='Fuel Load (%)', height=400)
+            st.plotly_chart(fig_fuel_load, use_container_width=True)
 
-        st.success(f"🏁 Best Pit Stop Strategy: {best_pit_laps}")
-        st.info(f"🏆 Total Race Time: {-solution_fitness:.2f} seconds")
+        # === PIT STRATEGY VISUAL === #
+        st.subheader("🔧 Pit Stop Strategy")
+        st.markdown(f"Pit Stops at Laps: {pit_decisions}")
 
-# === Time Complexity Analysis === #
-"""
-Time Complexity of Genetic Algorithm:
-- Fitness Evaluation: O(race_length) per individual
-- Population Size = P
-- Generations = G
-Total Complexity: O(P * G * race_length)
+        fig_pit = go.Figure()
+        fig_pit.add_trace(go.Scatter(x=pit_decisions, y=[pit_stop_time_loss for _ in pit_decisions], mode='markers', marker=dict(size=12, color='red'), name='Pit Stops'))
+        fig_pit.update_layout(template='plotly_dark', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'), xaxis_title='Lap', yaxis_title='Pit Stop Time (s)', height=400)
+        st.plotly_chart(fig_pit, use_container_width=True)
 
-This is scalable and avoids the instability of RL.
-"""
+        st.sidebar.success("Simulation Complete!")
