@@ -10,11 +10,9 @@ import pygad
 import fastf1
 from PIL import Image
 import time
-from gtts import gTTS
-import base64
 
 # === PAGE CONFIG === #
-st.set_page_config(page_title="🏎️ F1 Race Strategy & Replay", layout="wide")
+st.set_page_config(page_title="🏎️ F1 Race Strategy & Analytics", layout="wide")
 
 # === STYLE === #
 st.markdown("""
@@ -29,7 +27,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏎️ F1 Grand Prix Dashboard + Live Commentary & Replay")
+st.title("🏎️ F1 Grand Prix Strategy & Replay Dashboard")
 
 # === ENABLE CACHE === #
 if not os.path.exists('./cache'):
@@ -126,23 +124,8 @@ def run_ga():
     best_solution, _, _ = ga_instance.best_solution()
     return sorted(set(int(lap) for lap in best_solution if lap > 0 and lap <= race_length))
 
-# === AUDIO COMMENTARY === #
-def generate_commentary(driver, lap, event):
-    text = f"Lap {lap}: {driver} {event}"
-    tts = gTTS(text=text, lang='en')
-    filename = f"audio/commentary_{driver}_{lap}.mp3"
-    if not os.path.exists('audio'):
-        os.makedirs('audio')
-    tts.save(filename)
-    return filename
-
-def play_audio(filename):
-    audio_file = open(filename, "rb")
-    audio_bytes = audio_file.read()
-    st.audio(audio_bytes, format="audio/mp3")
-
 # === SIMULATE RACE === #
-if st.sidebar.button("🏁 Start Race"):
+if st.sidebar.button("🏁 Start Race Simulation"):
     drivers_to_simulate = [selected_driver] + random.sample(
         [d for t in teams.values() for d in t["drivers"] if d != selected_driver],
         4
@@ -159,7 +142,6 @@ if st.sidebar.button("🏁 Start Race"):
         lap_times = []
         tire_wear = []
         fuel_load = []
-        commentary_events = []
 
         circuit_data = circuits[selected_circuit]
         base_lap = circuit_data["base_lap_time"]
@@ -176,13 +158,6 @@ if st.sidebar.button("🏁 Start Race"):
             if lap in pit_laps:
                 lap_time += pit_stop_time
                 tw = 0
-                event = "pits!"
-                commentary_events.append(generate_commentary(driver, lap, event))
-            else:
-                event = "is racing smoothly"
-                if random.random() < 0.05:
-                    event = "sets the fastest lap!"
-                commentary_events.append(generate_commentary(driver, lap, event))
 
             laps.append(lap)
             lap_times.append(lap_time)
@@ -196,9 +171,10 @@ if st.sidebar.button("🏁 Start Race"):
             "tire_wear": tire_wear,
             "fuel_load": fuel_load,
             "pit_laps": pit_laps,
-            "total_time": sum(lap_times),
-            "commentary": commentary_events
+            "total_time": sum(lap_times)
         })
+
+        progress_bar.progress(drivers_to_simulate.index(driver) / len(drivers_to_simulate))
 
     # === Sort by total time === #
     race_results.sort(key=lambda x: x["total_time"])
@@ -211,8 +187,8 @@ if st.sidebar.button("🏁 Start Race"):
             if data["driver"] in t["drivers"]:
                 constructor_points[team] += points_system[idx]
 
-    # === Results === #
-    st.header("🏁 Final Results")
+    # === RESULTS === #
+    st.header("🏁 Final Race Results")
     df_results = pd.DataFrame({
         "Position": list(range(1, len(race_results) + 1)),
         "Driver": [r["driver"] for r in race_results],
@@ -220,35 +196,92 @@ if st.sidebar.button("🏁 Start Race"):
     })
     st.table(df_results)
 
-    # === Race Replay === #
-    st.subheader("🎥 Race Replay & Audio Commentary")
+    # === LAP TIME COMPARISON === #
+    st.subheader("📈 Lap Time Comparison")
+    fig_lap_times = go.Figure()
 
-    for lap in range(1, race_length + 1):
-        st.markdown(f"### Lap {lap}")
-        fig = go.Figure()
+    for data in race_results:
+        fig_lap_times.add_trace(go.Scatter(
+            x=data["laps"],
+            y=data["lap_times"],
+            mode='lines+markers',
+            name=data["driver"]
+        ))
 
-        for data in race_results:
-            if lap <= len(data["laps"]):
-                fig.add_trace(go.Scatter(
-                    x=[lap],
-                    y=[data["lap_times"][lap - 1]],
-                    mode='markers',
-                    marker=dict(size=12),
-                    name=data["driver"]
-                ))
-                # Play commentary for this lap
-                play_audio(data["commentary"][lap - 1])
+    fig_lap_times.update_layout(
+        title='Lap Times for All Drivers',
+        template='plotly_dark',
+        xaxis_title='Lap',
+        yaxis_title='Lap Time (s)',
+        height=500
+    )
+    st.plotly_chart(fig_lap_times, use_container_width=True)
 
-        fig.update_layout(
-            title=f"Lap {lap} Times",
-            xaxis_title="Lap",
-            yaxis_title="Lap Time (s)",
-            template="plotly_dark"
-        )
-        st.plotly_chart(fig)
-        time.sleep(1)
+    # === TIRE WEAR COMPARISON === #
+    st.subheader("🛞 Tire Wear Comparison")
+    fig_tire_wear = go.Figure()
 
-    # === Leaderboards === #
+    for data in race_results:
+        fig_tire_wear.add_trace(go.Scatter(
+            x=data["laps"],
+            y=data["tire_wear"],
+            mode='lines',
+            name=data["driver"]
+        ))
+
+    fig_tire_wear.update_layout(
+        title='Tire Wear (%) Over Laps',
+        template='plotly_dark',
+        xaxis_title='Lap',
+        yaxis_title='Tire Wear (%)',
+        height=500
+    )
+    st.plotly_chart(fig_tire_wear, use_container_width=True)
+
+    # === FUEL LOAD COMPARISON === #
+    st.subheader("⛽ Fuel Load Comparison")
+    fig_fuel_load = go.Figure()
+
+    for data in race_results:
+        fig_fuel_load.add_trace(go.Scatter(
+            x=data["laps"],
+            y=data["fuel_load"],
+            mode='lines',
+            name=data["driver"]
+        ))
+
+    fig_fuel_load.update_layout(
+        title='Fuel Load (%) Over Laps',
+        template='plotly_dark',
+        xaxis_title='Lap',
+        yaxis_title='Fuel Load (%)',
+        height=500
+    )
+    st.plotly_chart(fig_fuel_load, use_container_width=True)
+
+    # === PIT STOP STRATEGY === #
+    st.subheader("🔧 Pit Stop Strategy")
+    fig_pit = go.Figure()
+
+    for data in race_results:
+        fig_pit.add_trace(go.Scatter(
+            x=data["pit_laps"],
+            y=[pit_stop_time] * len(data["pit_laps"]),
+            mode='markers',
+            marker=dict(size=12),
+            name=data["driver"]
+        ))
+
+    fig_pit.update_layout(
+        title='Pit Stop Laps',
+        template='plotly_dark',
+        xaxis_title='Lap',
+        yaxis_title='Pit Stop Time (s)',
+        height=500
+    )
+    st.plotly_chart(fig_pit, use_container_width=True)
+
+    # === LEADERBOARDS === #
     st.subheader("🏆 Driver Championship Leaderboard")
     st.table(pd.DataFrame(driver_points.items(), columns=["Driver", "Points"]).sort_values(by="Points", ascending=False))
 
