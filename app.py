@@ -93,7 +93,13 @@ def run_ga():
     ga_instance.run()
     solution, solution_fitness, solution_idx = ga_instance.best_solution()
     best_pit_laps = np.where(np.array(solution) == 1)[0]
+
+    # Ensure at least one pit stop is selected
+    if len(best_pit_laps) == 0:
+        best_pit_laps = [race_length // 2]  # Default to a mid-race pit stop
+
     return best_pit_laps
+
 
 # === RUN SIMULATION === #
 run_simulation = st.sidebar.button("🏁 Run Simulation")
