@@ -4,37 +4,23 @@ os.environ["PYTORCH_JIT"] = "0"
 import streamlit as st
 import numpy as np
 import pandas as pd
-import random
 import plotly.graph_objects as go
-import pygad
 import fastf1
+from fastf1 import plotting
+from fastf1.core import Laps
+from datetime import datetime
+import requests
+import random
 from PIL import Image
-import time
 
-# === PAGE CONFIG === #
-st.set_page_config(page_title="🏎️ F1 Race Strategy & Analytics", layout="wide")
+# === CONFIG === #
+st.set_page_config(page_title="🏎️ F1 Live Race Strategy Dashboard", layout="wide")
+st.markdown("<h1 style='text-align: center; color: red;'>🏁 F1 Live Race Strategy Dashboard</h1>", unsafe_allow_html=True)
 
-# === STYLE === #
-st.markdown("""
-<style>
-.stApp {
-    background-color: #0d1117;
-    color: white;
-}
-.block-container {
-    padding: 2rem;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.title("🏎️ F1 Grand Prix Strategy & Replay Dashboard")
-
-# === ENABLE CACHE === #
-if not os.path.exists('./cache'):
-    os.makedirs('./cache')
+# Enable cache for FastF1
 fastf1.Cache.enable_cache('./cache')
 
-# === TEAM CONFIG === #
+# === TEAMS & DRIVERS === #
 teams = {
     "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "color": ["#00D2BE", "#FFFFFF"]},
     "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15, "color": ["#1E41FF", "#FFD700"]},
@@ -42,249 +28,121 @@ teams = {
     "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30, "color": ["#FF8700", "#FFFFFF"]}
 }
 
-driver_profiles = {
-    "Lewis Hamilton": {"skill": 0.95},
-    "George Russell": {"skill": 0.90},
-    "Max Verstappen": {"skill": 0.97},
-    "Sergio Perez": {"skill": 0.91},
-    "Charles Leclerc": {"skill": 0.93},
-    "Carlos Sainz": {"skill": 0.92},
-    "Lando Norris": {"skill": 0.89},
-    "Oscar Piastri": {"skill": 0.88}
-}
+# === SIDEBAR SELECTIONS === #
+st.sidebar.header("🏎️ Team & Driver Selection")
+selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
+selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
+degradation_base = teams[selected_team]["degradation_factor"]
+team_colors = teams[selected_team]["color"]
 
-# === CIRCUIT CONFIG === #
-circuits = {
-    "Monaco GP": {"base_lap_time": 75, "degradation": 0.30},
-    "Monza GP": {"base_lap_time": 70, "degradation": 0.20},
-    "Spa GP": {"base_lap_time": 95, "degradation": 0.25},
-}
+team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
+driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
 
-# === SIDEBAR === #
-st.sidebar.header("🏎️ Setup")
-selected_team = st.sidebar.selectbox("Team", list(teams.keys()))
-selected_driver = st.sidebar.selectbox("Driver", teams[selected_team]["drivers"])
-selected_circuit = st.sidebar.selectbox("Circuit", list(circuits.keys()))
-race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 50)
-pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 20)
+st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
+st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
+st.sidebar.markdown(f"### Degradation Factor: `{degradation_base}`")
 
-# === ASSET PATHS === #
-ASSET_FOLDER = 'assets'
-LOGOS_FOLDER = f"{ASSET_FOLDER}/logos"
-DRIVERS_FOLDER = f"{ASSET_FOLDER}/drivers"
+# === SIMULATION SETTINGS === #
+race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
+pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
 
-# === IMAGES === #
-team_logo = f"{LOGOS_FOLDER}/{selected_team.lower().replace(' ', '_')}.png"
-driver_photo = f"{DRIVERS_FOLDER}/{selected_driver.lower().replace(' ', '_')}.png"
+# === WEATHER INTEGRATION === #
+def get_weather():
+    api_key = "121e2c26dfc4b73738ab60a1f773fc1a"
+    city = "Monza"
+    url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}"
+    try:
+        response = requests.get(url)
+        data = response.json()
+        desc = data["weather"][0]["description"]
+        temp = data["main"]["temp"] - 273.15
+        return f"{desc.title()}, {temp:.1f}°C"
+    except:
+        return "Clear, 25°C"
 
-st.sidebar.image(team_logo, caption=selected_team)
-st.sidebar.image(driver_photo, caption=selected_driver)
+weather = get_weather()
 
-# === GLOBAL STATE === #
-driver_points = {d: 0 for t in teams.values() for d in t["drivers"]}
-constructor_points = {t: 0 for t in teams.keys()}
+# === CIRCUIT BACKGROUND === #
+st.markdown("---")
+circuit_bg = Image.open("assets/circuits/monza_track.png")
+st.image(circuit_bg, caption="Autodromo Nazionale Monza", use_column_width=True)
 
-# === FITNESS FUNCTION FOR GA === #
-def fitness_func(ga_instance, solution, solution_idx):
-    pit_laps = sorted(set(int(lap) for lap in solution if 0 < lap <= race_length))
-    circuit_data = circuits[selected_circuit]
-    base_lap = circuit_data["base_lap_time"]
-    degradation = circuit_data["degradation"]
+# === LIVE TELEMETRY FETCH === #
+@st.cache_data
+def load_telemetry(session_year, gp_name):
+    session = fastf1.get_session(session_year, gp_name, 'R')
+    session.load()
+    laps = session.laps.pick_driver(selected_driver.split()[1][:3].upper())
+    return laps
 
-    total_time = 0
-    tire_wear = 0
-    fuel_load = 100
-    skill = driver_profiles[selected_driver]["skill"]
+laps_data = load_telemetry(2023, "Monza")
 
-    for lap in range(1, race_length + 1):
-        tire_wear += degradation * 100 / race_length
-        fuel_load -= 100 / race_length
-        lap_time = base_lap * (1 + tire_wear / 1000 + fuel_load / 1000) * (1 - skill)
+# === LAP TIMES === #
+lap_numbers = laps_data['LapNumber'].values
+lap_times_sec = laps_data['LapTime'].dt.total_seconds()
 
-        if lap in pit_laps:
-            lap_time += pit_stop_time
-            tire_wear = 0
+# === GENERATE SIMULATION DATA === #
+def generate_race_data():
+    laps = np.arange(1, race_length + 1)
+    lap_times = lap_times_sec if len(lap_times_sec) >= race_length else np.random.normal(90, 2, size=race_length)
+    lead_delta = np.cumsum(np.random.normal(0, 1, size=race_length))
+    tire_wear = np.maximum(0, 100 - degradation_base * laps * 100)
+    fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
+    return laps, lap_times, lead_delta, tire_wear, fuel_load
 
-        total_time += lap_time
+laps, lap_times, lead_delta, tire_wear, fuel_load = generate_race_data()
 
-    return -total_time
+# === MULTI-DRIVER COMPARISON === #
+st.markdown(f"<h2 style='color: {team_colors[0]}'>Race Simulation for {selected_driver}</h2>", unsafe_allow_html=True)
+st.markdown(f"### Weather: {weather}")
 
-def run_ga():
-    ga_instance = pygad.GA(
-        num_generations=20,
-        num_parents_mating=5,
-        fitness_func=fitness_func,
-        sol_per_pop=10,
-        num_genes=3,
-        init_range_low=1,
-        init_range_high=race_length,
-        mutation_percent_genes=15
-    )
-    ga_instance.run()
-    best_solution, _, _ = ga_instance.best_solution()
-    return sorted(set(int(lap) for lap in best_solution if lap > 0 and lap <= race_length))
+col1, col2 = st.columns(2)
 
-# === SIMULATE RACE === #
-if st.sidebar.button("🏁 Start Race Simulation"):
-    drivers_to_simulate = [selected_driver] + random.sample(
-        [d for t in teams.values() for d in t["drivers"] if d != selected_driver],
-        4
-    )
-
-    race_results = []
-    progress_bar = st.progress(0)
-
-    for driver in drivers_to_simulate:
-        profile = driver_profiles[driver]
-        pit_laps = run_ga()
-
-        laps = []
-        lap_times = []
-        tire_wear = []
-        fuel_load = []
-
-        circuit_data = circuits[selected_circuit]
-        base_lap = circuit_data["base_lap_time"]
-        degradation = circuit_data["degradation"]
-
-        tw = 0
-        fuel = 100
-
-        for lap in range(1, race_length + 1):
-            tw += degradation * 100 / race_length
-            fuel -= 100 / race_length
-            lap_time = base_lap * (1 + tw / 1000 + fuel / 1000) * (1 - profile["skill"])
-
-            if lap in pit_laps:
-                lap_time += pit_stop_time
-                tw = 0
-
-            laps.append(lap)
-            lap_times.append(lap_time)
-            tire_wear.append(tw)
-            fuel_load.append(fuel)
-
-        race_results.append({
-            "driver": driver,
-            "laps": laps,
-            "lap_times": lap_times,
-            "tire_wear": tire_wear,
-            "fuel_load": fuel_load,
-            "pit_laps": pit_laps,
-            "total_time": sum(lap_times)
-        })
-
-        progress_bar.progress(drivers_to_simulate.index(driver) / len(drivers_to_simulate))
-
-    # === Sort by total time === #
-    race_results.sort(key=lambda x: x["total_time"])
-
-    # === Leaderboards === #
-    points_system = [25, 18, 15, 12, 10]
-    for idx, data in enumerate(race_results):
-        driver_points[data["driver"]] += points_system[idx]
-        for team, t in teams.items():
-            if data["driver"] in t["drivers"]:
-                constructor_points[team] += points_system[idx]
-
-    # === RESULTS === #
-    st.header("🏁 Final Race Results")
-    df_results = pd.DataFrame({
-        "Position": list(range(1, len(race_results) + 1)),
-        "Driver": [r["driver"] for r in race_results],
-        "Total Time (s)": [round(r["total_time"], 2) for r in race_results]
-    })
-    st.table(df_results)
-
-    # === LAP TIME COMPARISON === #
-    st.subheader("📈 Lap Time Comparison")
+with col1:
     fig_lap_times = go.Figure()
-
-    for data in race_results:
-        fig_lap_times.add_trace(go.Scatter(
-            x=data["laps"],
-            y=data["lap_times"],
-            mode='lines+markers',
-            name=data["driver"]
-        ))
-
-    fig_lap_times.update_layout(
-        title='Lap Times for All Drivers',
-        template='plotly_dark',
-        xaxis_title='Lap',
-        yaxis_title='Lap Time (s)',
-        height=500
-    )
+    fig_lap_times.add_trace(go.Scatter(x=laps, y=lap_times, mode='lines+markers', name='Lap Times', line=dict(color=team_colors[0])))
+    fig_lap_times.update_layout(title='Lap Times', template='plotly_dark')
     st.plotly_chart(fig_lap_times, use_container_width=True)
 
-    # === TIRE WEAR COMPARISON === #
-    st.subheader("🛞 Tire Wear Comparison")
-    fig_tire_wear = go.Figure()
+with col2:
+    fig_delta = go.Figure()
+    fig_delta.add_trace(go.Scatter(x=laps, y=lead_delta, mode='lines+markers', name='Track Position Delta', line=dict(color=team_colors[1])))
+    fig_delta.update_layout(title='Track Position Delta', template='plotly_dark')
+    st.plotly_chart(fig_delta, use_container_width=True)
 
-    for data in race_results:
-        fig_tire_wear.add_trace(go.Scatter(
-            x=data["laps"],
-            y=data["tire_wear"],
-            mode='lines',
-            name=data["driver"]
-        ))
+col3, col4 = st.columns(2)
 
-    fig_tire_wear.update_layout(
-        title='Tire Wear (%) Over Laps',
-        template='plotly_dark',
-        xaxis_title='Lap',
-        yaxis_title='Tire Wear (%)',
-        height=500
-    )
-    st.plotly_chart(fig_tire_wear, use_container_width=True)
+with col3:
+    fig_tire = go.Figure()
+    fig_tire.add_trace(go.Scatter(x=laps, y=tire_wear, mode='lines+markers', name='Tire Wear (%)', line=dict(color='orange')))
+    fig_tire.update_layout(title='Tire Wear Over Race', template='plotly_dark')
+    st.plotly_chart(fig_tire, use_container_width=True)
 
-    # === FUEL LOAD COMPARISON === #
-    st.subheader("⛽ Fuel Load Comparison")
-    fig_fuel_load = go.Figure()
+with col4:
+    fig_fuel = go.Figure()
+    fig_fuel.add_trace(go.Scatter(x=laps, y=fuel_load, mode='lines+markers', name='Fuel Load (%)', line=dict(color='yellow')))
+    fig_fuel.update_layout(title='Fuel Load Over Race', template='plotly_dark')
+    st.plotly_chart(fig_fuel, use_container_width=True)
 
-    for data in race_results:
-        fig_fuel_load.add_trace(go.Scatter(
-            x=data["laps"],
-            y=data["fuel_load"],
-            mode='lines',
-            name=data["driver"]
-        ))
+# === PIT STOP STRATEGY === #
+pit_decisions = [random.choice(range(1, race_length)) for _ in range(2)]
+st.markdown("## 🔧 Pit Stop Strategy")
+st.markdown(f"### Pit Stops at Laps: `{pit_decisions}`")
 
-    fig_fuel_load.update_layout(
-        title='Fuel Load (%) Over Laps',
-        template='plotly_dark',
-        xaxis_title='Lap',
-        yaxis_title='Fuel Load (%)',
-        height=500
-    )
-    st.plotly_chart(fig_fuel_load, use_container_width=True)
+fig_pit = go.Figure()
+fig_pit.add_trace(go.Scatter(x=pit_decisions, y=[pit_stop_time for _ in pit_decisions],
+                             mode='markers', marker=dict(size=12, color='red'), name='Pit Stops'))
+fig_pit.update_layout(title='Pit Stop Timing', template='plotly_dark')
+st.plotly_chart(fig_pit, use_container_width=True)
 
-    # === PIT STOP STRATEGY === #
-    st.subheader("🔧 Pit Stop Strategy")
-    fig_pit = go.Figure()
+# === STANDINGS SIMULATION === #
+driver_points = random.randint(50, 300)
+constructor_points = random.randint(150, 600)
 
-    for data in race_results:
-        fig_pit.add_trace(go.Scatter(
-            x=data["pit_laps"],
-            y=[pit_stop_time] * len(data["pit_laps"]),
-            mode='markers',
-            marker=dict(size=12),
-            name=data["driver"]
-        ))
+st.sidebar.header("🏆 Championship Standings (Simulated)")
+st.sidebar.markdown(f"**Driver Points for {selected_driver}:** {driver_points}")
+st.sidebar.markdown(f"**Constructor Points for {selected_team}:** {constructor_points}")
 
-    fig_pit.update_layout(
-        title='Pit Stop Laps',
-        template='plotly_dark',
-        xaxis_title='Lap',
-        yaxis_title='Pit Stop Time (s)',
-        height=500
-    )
-    st.plotly_chart(fig_pit, use_container_width=True)
-
-    # === LEADERBOARDS === #
-    st.subheader("🏆 Driver Championship Leaderboard")
-    st.table(pd.DataFrame(driver_points.items(), columns=["Driver", "Points"]).sort_values(by="Points", ascending=False))
-
-    st.subheader("🏆 Constructor Championship Leaderboard")
-    st.table(pd.DataFrame(constructor_points.items(), columns=["Team", "Points"]).sort_values(by="Points", ascending=False))
-
+# === FOOTER === #
+st.markdown("---")
+st.markdown("<h4 style='text-align: center; color: grey;'>© 2025 F1 Race Strategy Dashboard</h4>", unsafe_allow_html=True)
