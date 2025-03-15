@@ -65,7 +65,7 @@ weather = get_weather()
 # === CIRCUIT BACKGROUND === #
 st.markdown("---")
 circuit_bg = Image.open("assets/circuits/monza_track.png")
-st.image(circuit_bg, caption="Autodromo Nazionale Monza", use_column_width=True)
+st.image(circuit_bg, caption="Autodromo Nazionale Monza", use_container_width=True)
 
 # === LIVE TELEMETRY FETCH === #
 @st.cache_data
