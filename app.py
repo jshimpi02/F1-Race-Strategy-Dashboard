@@ -7,11 +7,17 @@ import pandas as pd
 import random
 import plotly.graph_objects as go
 import pygad
+import fastf1
 from PIL import Image
+
+# Enable FastF1 Cache
+if not os.path.exists('./cache'):
+    os.makedirs('./cache')
+fastf1.Cache.enable_cache('./cache')
 
 # === PAGE CONFIG === #
 st.set_page_config(page_title="🏎️ F1 Race Strategy Dashboard", layout="wide")
-st.title("🏎️ F1 Race Strategy Simulator - Genetic Algorithm + Multi-driver + Telemetry")
+st.title("🏎️ F1 Race Strategy Simulator - Genetic Algorithm + Multi-driver + Live Telemetry")
 st.markdown("---")
 
 # === ASSETS CONFIG === #
@@ -57,7 +63,7 @@ profile = driver_profiles[selected_driver]
 st.sidebar.header("⚙️ Simulation Settings")
 race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
 pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
-num_opponents = 5
+num_opponents = st.sidebar.slider("Number of Opponents", 1, 10, 5)
 
 # === WEATHER SETTINGS === #
 st.sidebar.header("🌦️ Weather Settings")
@@ -69,11 +75,9 @@ st.sidebar.header("🚾 Tire Compound Selection")
 tire_options = {"Soft": 0.40, "Medium": 0.25, "Hard": 0.15}
 selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options.keys()))
 
-
 # === GENETIC ALGORITHM CONFIG === #
 def fitness_func(ga_instance, solution, solution_idx):
-    pit_laps = [lap for lap in solution if lap >= 0 and lap <= race_length]
-    pit_laps = sorted(set(int(lap) for lap in pit_laps))
+    pit_laps = sorted(set(int(lap) for lap in solution if 0 < lap <= race_length))
     total_time = 0
     tire_wear = 0
     fuel_load = 100
@@ -99,8 +103,7 @@ def fitness_func(ga_instance, solution, solution_idx):
 
         total_time += lap_time
 
-    return -total_time  # Minimize total time
-
+    return -total_time
 
 def run_ga():
     ga_instance = pygad.GA(
@@ -108,7 +111,7 @@ def run_ga():
         num_parents_mating=5,
         fitness_func=fitness_func,
         sol_per_pop=10,
-        num_genes=3,  # Number of pit stops to plan
+        num_genes=3,
         init_range_low=1,
         init_range_high=race_length,
         mutation_percent_genes=30
@@ -118,112 +121,120 @@ def run_ga():
     best_pit_laps = sorted(set(int(lap) for lap in best_solution if lap >= 0 and lap <= race_length))
     return best_pit_laps
 
+# === LIVE TELEMETRY === #
+def load_live_telemetry(year=2023, gp='Bahrain'):
+    try:
+        session = fastf1.get_session(year, gp, 'R')
+        session.load()
+        laps = session.laps.pick_driver(selected_driver.split()[1][:3].upper())
+        lap_times = laps['LapTime'].dt.total_seconds()
+        return lap_times
+    except Exception as e:
+        st.error(f"Failed to load telemetry: {e}")
+        return None
 
 # === RUN SIMULATION BUTTON === #
 if st.sidebar.button("🏁 Run Simulation"):
-    with st.spinner("Optimizing strategy and running simulation..."):
-        best_pit_laps = run_ga()
+    with st.spinner("Running multi-driver race simulation..."):
+        race_data = []
+        drivers_to_simulate = [selected_driver]
+        other_drivers = [d for team in teams.values() for d in team["drivers"] if d != selected_driver]
+        drivers_to_simulate += random.sample(other_drivers, min(num_opponents, len(other_drivers)))
 
-        # === GENERATE DATA FOR DRIVER === #
-        laps = np.arange(1, race_length + 1)
-        lap_times = []
-        tire_wear = []
-        fuel_load = []
-        skill = profile["skill"]
+        for driver in drivers_to_simulate:
+            profile = driver_profiles[driver]
+            pit_laps = run_ga()
 
-        current_tire_wear = 0
-        current_fuel = 100
-        pit_laps = best_pit_laps
+            laps = np.arange(1, race_length + 1)
+            lap_times = []
+            tire_wear = []
+            fuel_load = []
+            current_tire_wear = 0
+            current_fuel = 100
 
-        for lap in laps:
-            current_tire_wear += degradation_base * 100 / race_length
-            current_fuel -= 100 / race_length
+            for lap in laps:
+                current_tire_wear += degradation_base * 100 / race_length
+                current_fuel -= 100 / race_length
 
-            weather_penalty = 1.0
-            if selected_weather == "Light Rain":
-                weather_penalty = 1.05
-            elif selected_weather == "Heavy Rain":
-                weather_penalty = 1.1
-            elif selected_weather == "Dynamic Weather" and lap % 10 == 0:
-                weather_penalty = 1.05 + random.choice([0.0, 0.05])
+                weather_penalty = 1.0
+                if selected_weather == "Light Rain":
+                    weather_penalty = 1.05
+                elif selected_weather == "Heavy Rain":
+                    weather_penalty = 1.1
+                elif selected_weather == "Dynamic Weather" and lap % 10 == 0:
+                    weather_penalty = 1.05 + random.choice([0.0, 0.05])
 
-            lap_time = 90 * (1 + current_tire_wear / 1000 + current_fuel / 1000) * (1 - skill) * weather_penalty
+                lap_time = 90 * (1 + current_tire_wear / 1000 + current_fuel / 1000) * (1 - profile["skill"]) * weather_penalty
 
-            if lap in pit_laps:
-                lap_time += pit_stop_time
-                current_tire_wear = 0
+                if lap in pit_laps:
+                    lap_time += pit_stop_time
+                    current_tire_wear = 0
 
-            lap_times.append(lap_time)
-            tire_wear.append(current_tire_wear)
-            fuel_load.append(current_fuel)
+                lap_times.append(lap_time)
+                tire_wear.append(current_tire_wear)
+                fuel_load.append(current_fuel)
+
+            race_data.append({
+                "driver": driver,
+                "lap_times": lap_times,
+                "tire_wear": tire_wear,
+                "fuel_load": fuel_load,
+                "pit_laps": pit_laps
+            })
 
         # === VISUALIZATION === #
-        col1, col2 = st.columns(2)
+        st.header("🏎️ Multi-driver Race Simulation Results")
 
-        with col1:
-            fig_lap_times = go.Figure()
-            fig_lap_times.add_trace(go.Scatter(
-                x=laps,
-                y=lap_times,
+        fig = go.Figure()
+        for data in race_data:
+            fig.add_trace(go.Scatter(
+                x=np.arange(1, race_length + 1),
+                y=data["lap_times"],
                 mode='lines+markers',
-                name=f"{selected_driver} Lap Times",
-                line=dict(color=team_colors[0], width=3)
+                name=data["driver"]
             ))
-            fig_lap_times.update_layout(
-                title=f"{selected_driver} Lap Times",
-                template='plotly_dark',
-                height=400
-            )
-            st.plotly_chart(fig_lap_times, use_container_width=True)
 
-        with col2:
-            fig_tire_wear = go.Figure()
-            fig_tire_wear.add_trace(go.Scatter(
-                x=laps,
-                y=tire_wear,
+        fig.update_layout(
+            title="Lap Times for All Drivers",
+            template='plotly_dark',
+            xaxis_title='Lap',
+            yaxis_title='Lap Time (s)'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # === PIT STRATEGY VISUAL === #
+        st.subheader("🔧 Pit Stop Strategies")
+        for data in race_data:
+            st.markdown(f"**{data['driver']}** Pit Stops at: {data['pit_laps']}")
+
+        # === TELEMETRY === #
+        st.subheader("📊 Live Telemetry (Real Race Lap Times)")
+        telemetry = load_live_telemetry()
+        if telemetry is not None:
+            fig_telemetry = go.Figure()
+            fig_telemetry.add_trace(go.Scatter(
+                y=telemetry,
+                x=np.arange(1, len(telemetry) + 1),
                 mode='lines+markers',
-                name='Tire Wear (%)',
-                line=dict(color='orange', width=3)
+                name=f"{selected_driver} Real Lap Times"
             ))
-            fig_tire_wear.update_layout(
-                title='Tire Wear Over Race',
+            fig_telemetry.update_layout(
+                title="Real Lap Times from FastF1",
                 template='plotly_dark',
-                height=400
+                xaxis_title='Lap',
+                yaxis_title='Lap Time (s)'
             )
-            st.plotly_chart(fig_tire_wear, use_container_width=True)
+            st.plotly_chart(fig_telemetry, use_container_width=True)
 
-        col3, col4 = st.columns(2)
+        # === DOWNLOAD DATA === #
+        st.subheader("📥 Download Race Data")
+        df = pd.DataFrame({
+            "Lap": np.arange(1, race_length + 1)
+        })
+        for data in race_data:
+            df[data["driver"] + "_LapTime"] = data["lap_times"]
 
-        with col3:
-            fig_fuel_load = go.Figure()
-            fig_fuel_load.add_trace(go.Scatter(
-                x=laps,
-                y=fuel_load,
-                mode='lines+markers',
-                name='Fuel Load (%)',
-                line=dict(color='yellow', width=3)
-            ))
-            fig_fuel_load.update_layout(
-                title='Fuel Load Over Race',
-                template='plotly_dark',
-                height=400
-            )
-            st.plotly_chart(fig_fuel_load, use_container_width=True)
+        csv = df.to_csv(index=False)
+        st.download_button("Download CSV", csv, "race_data.csv", "text/csv")
 
-        with col4:
-            fig_pit_strategy = go.Figure()
-            fig_pit_strategy.add_trace(go.Scatter(
-                x=pit_laps,
-                y=[pit_stop_time] * len(pit_laps),
-                mode='markers',
-                marker=dict(size=12, color='red'),
-                name='Pit Stops'
-            ))
-            fig_pit_strategy.update_layout(
-                title='Pit Stop Strategy',
-                template='plotly_dark',
-                height=400
-            )
-            st.plotly_chart(fig_pit_strategy, use_container_width=True)
-
-        st.sidebar.success(f"🏁 Simulation Complete! Best Pit Stops at Laps: {pit_laps}")
+        st.sidebar.success("✅ Simulation Complete!")
