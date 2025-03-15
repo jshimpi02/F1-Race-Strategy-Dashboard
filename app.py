@@ -9,23 +9,34 @@ import plotly.graph_objects as go
 import pygad
 import fastf1
 from PIL import Image
+import time
+from gtts import gTTS
+import base64
 
-# Enable FastF1 Cache
+# === PAGE CONFIG === #
+st.set_page_config(page_title="🏎️ F1 Race Strategy & Replay", layout="wide")
+
+# === STYLE === #
+st.markdown("""
+<style>
+.stApp {
+    background-color: #0d1117;
+    color: white;
+}
+.block-container {
+    padding: 2rem;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🏎️ F1 Grand Prix Dashboard + Live Commentary & Replay")
+
+# === ENABLE CACHE === #
 if not os.path.exists('./cache'):
     os.makedirs('./cache')
 fastf1.Cache.enable_cache('./cache')
 
-# === PAGE CONFIG === #
-st.set_page_config(page_title="🏎️ F1 Race Strategy Dashboard", layout="wide")
-st.title("🏎️ F1 Race Strategy Simulator - Genetic Algorithm + Multi-driver + Live Telemetry")
-st.markdown("---")
-
-# === ASSETS CONFIG === #
-ASSET_FOLDER = 'assets'
-LOGOS_FOLDER = f"{ASSET_FOLDER}/logos"
-DRIVERS_FOLDER = f"{ASSET_FOLDER}/drivers"
-
-# === TEAM & DRIVER SELECTION === #
+# === TEAM CONFIG === #
 teams = {
     "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "color": ["#00D2BE", "#FFFFFF"]},
     "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15, "color": ["#1E41FF", "#FFD700"]},
@@ -33,69 +44,64 @@ teams = {
     "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30, "color": ["#FF8700", "#FFFFFF"]}
 }
 
-st.sidebar.header("🏎️ Team & Driver Selection")
-selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
-selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
-degradation_base = teams[selected_team]["degradation_factor"]
-team_colors = teams[selected_team]["color"]
-
-# === LOAD LOGO AND DRIVER PHOTO === #
-logo_path = f"{LOGOS_FOLDER}/{selected_team.lower().replace(' ', '_')}.png"
-driver_image_path = f"{DRIVERS_FOLDER}/{selected_driver.lower().replace(' ', '_')}.png"
-st.sidebar.image(logo_path, caption=selected_team, use_container_width=True)
-st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
-
-# === DRIVER PROFILES === #
 driver_profiles = {
-    "Lewis Hamilton": {"skill": 0.95, "aggression": 0.4, "wet_skill": 0.9},
-    "George Russell": {"skill": 0.90, "aggression": 0.3, "wet_skill": 0.85},
-    "Max Verstappen": {"skill": 0.97, "aggression": 0.5, "wet_skill": 0.85},
-    "Sergio Perez": {"skill": 0.91, "aggression": 0.35, "wet_skill": 0.80},
-    "Charles Leclerc": {"skill": 0.93, "aggression": 0.6, "wet_skill": 0.8},
-    "Carlos Sainz": {"skill": 0.92, "aggression": 0.4, "wet_skill": 0.83},
-    "Lando Norris": {"skill": 0.89, "aggression": 0.45, "wet_skill": 0.82},
-    "Oscar Piastri": {"skill": 0.88, "aggression": 0.38, "wet_skill": 0.81}
+    "Lewis Hamilton": {"skill": 0.95},
+    "George Russell": {"skill": 0.90},
+    "Max Verstappen": {"skill": 0.97},
+    "Sergio Perez": {"skill": 0.91},
+    "Charles Leclerc": {"skill": 0.93},
+    "Carlos Sainz": {"skill": 0.92},
+    "Lando Norris": {"skill": 0.89},
+    "Oscar Piastri": {"skill": 0.88}
 }
 
-profile = driver_profiles[selected_driver]
+# === CIRCUIT CONFIG === #
+circuits = {
+    "Monaco GP": {"base_lap_time": 75, "degradation": 0.30},
+    "Monza GP": {"base_lap_time": 70, "degradation": 0.20},
+    "Spa GP": {"base_lap_time": 95, "degradation": 0.25},
+}
 
-# === SIMULATION SETTINGS === #
-st.sidebar.header("⚙️ Simulation Settings")
-race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
-pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
-num_opponents = st.sidebar.slider("Number of Opponents", 1, 10, 5)
+# === SIDEBAR === #
+st.sidebar.header("🏎️ Setup")
+selected_team = st.sidebar.selectbox("Team", list(teams.keys()))
+selected_driver = st.sidebar.selectbox("Driver", teams[selected_team]["drivers"])
+selected_circuit = st.sidebar.selectbox("Circuit", list(circuits.keys()))
+race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 50)
+pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 20)
 
-# === WEATHER SETTINGS === #
-st.sidebar.header("🌦️ Weather Settings")
-weather_types = ["Clear", "Light Rain", "Heavy Rain", "Dynamic Weather"]
-selected_weather = st.sidebar.selectbox("Select Weather", weather_types)
+# === ASSET PATHS === #
+ASSET_FOLDER = 'assets'
+LOGOS_FOLDER = f"{ASSET_FOLDER}/logos"
+DRIVERS_FOLDER = f"{ASSET_FOLDER}/drivers"
 
-# === TIRE COMPOUND SELECTION === #
-st.sidebar.header("🚾 Tire Compound Selection")
-tire_options = {"Soft": 0.40, "Medium": 0.25, "Hard": 0.15}
-selected_tire = st.sidebar.selectbox("Starting Tire Compound", list(tire_options.keys()))
+# === IMAGES === #
+team_logo = f"{LOGOS_FOLDER}/{selected_team.lower().replace(' ', '_')}.png"
+driver_photo = f"{DRIVERS_FOLDER}/{selected_driver.lower().replace(' ', '_')}.png"
 
-# === GENETIC ALGORITHM CONFIG === #
+st.sidebar.image(team_logo, caption=selected_team)
+st.sidebar.image(driver_photo, caption=selected_driver)
+
+# === GLOBAL STATE === #
+driver_points = {d: 0 for t in teams.values() for d in t["drivers"]}
+constructor_points = {t: 0 for t in teams.keys()}
+
+# === FITNESS FUNCTION FOR GA === #
 def fitness_func(ga_instance, solution, solution_idx):
     pit_laps = sorted(set(int(lap) for lap in solution if 0 < lap <= race_length))
+    circuit_data = circuits[selected_circuit]
+    base_lap = circuit_data["base_lap_time"]
+    degradation = circuit_data["degradation"]
+
     total_time = 0
     tire_wear = 0
     fuel_load = 100
-    skill = profile["skill"]
+    skill = driver_profiles[selected_driver]["skill"]
 
     for lap in range(1, race_length + 1):
-        tire_wear += degradation_base * 100 / race_length
+        tire_wear += degradation * 100 / race_length
         fuel_load -= 100 / race_length
-
-        weather_penalty = 1.0
-        if selected_weather == "Light Rain":
-            weather_penalty = 1.05
-        elif selected_weather == "Heavy Rain":
-            weather_penalty = 1.1
-        elif selected_weather == "Dynamic Weather" and lap % 10 == 0:
-            weather_penalty = 1.05 + random.choice([0.0, 0.05])
-
-        lap_time = 90 * (1 + tire_wear / 1000 + fuel_load / 1000) * (1 - skill) * weather_penalty
+        lap_time = base_lap * (1 + tire_wear / 1000 + fuel_load / 1000) * (1 - skill)
 
         if lap in pit_laps:
             lap_time += pit_stop_time
@@ -107,134 +113,145 @@ def fitness_func(ga_instance, solution, solution_idx):
 
 def run_ga():
     ga_instance = pygad.GA(
-        num_generations=50,
+        num_generations=20,
         num_parents_mating=5,
         fitness_func=fitness_func,
         sol_per_pop=10,
         num_genes=3,
         init_range_low=1,
         init_range_high=race_length,
-        mutation_percent_genes=30
+        mutation_percent_genes=15
     )
     ga_instance.run()
-    best_solution, best_solution_fitness, _ = ga_instance.best_solution()
-    best_pit_laps = sorted(set(int(lap) for lap in best_solution if lap >= 0 and lap <= race_length))
-    return best_pit_laps
+    best_solution, _, _ = ga_instance.best_solution()
+    return sorted(set(int(lap) for lap in best_solution if lap > 0 and lap <= race_length))
 
-# === LIVE TELEMETRY === #
-def load_live_telemetry(year=2023, gp='Bahrain'):
-    try:
-        session = fastf1.get_session(year, gp, 'R')
-        session.load()
-        laps = session.laps.pick_driver(selected_driver.split()[1][:3].upper())
-        lap_times = laps['LapTime'].dt.total_seconds()
-        return lap_times
-    except Exception as e:
-        st.error(f"Failed to load telemetry: {e}")
-        return None
+# === AUDIO COMMENTARY === #
+def generate_commentary(driver, lap, event):
+    text = f"Lap {lap}: {driver} {event}"
+    tts = gTTS(text=text, lang='en')
+    filename = f"audio/commentary_{driver}_{lap}.mp3"
+    if not os.path.exists('audio'):
+        os.makedirs('audio')
+    tts.save(filename)
+    return filename
 
-# === RUN SIMULATION BUTTON === #
-if st.sidebar.button("🏁 Run Simulation"):
-    with st.spinner("Running multi-driver race simulation..."):
-        race_data = []
-        drivers_to_simulate = [selected_driver]
-        other_drivers = [d for team in teams.values() for d in team["drivers"] if d != selected_driver]
-        drivers_to_simulate += random.sample(other_drivers, min(num_opponents, len(other_drivers)))
+def play_audio(filename):
+    audio_file = open(filename, "rb")
+    audio_bytes = audio_file.read()
+    st.audio(audio_bytes, format="audio/mp3")
 
-        for driver in drivers_to_simulate:
-            profile = driver_profiles[driver]
-            pit_laps = run_ga()
+# === SIMULATE RACE === #
+if st.sidebar.button("🏁 Start Race"):
+    drivers_to_simulate = [selected_driver] + random.sample(
+        [d for t in teams.values() for d in t["drivers"] if d != selected_driver],
+        4
+    )
 
-            laps = np.arange(1, race_length + 1)
-            lap_times = []
-            tire_wear = []
-            fuel_load = []
-            current_tire_wear = 0
-            current_fuel = 100
+    race_results = []
+    progress_bar = st.progress(0)
 
-            for lap in laps:
-                current_tire_wear += degradation_base * 100 / race_length
-                current_fuel -= 100 / race_length
+    for driver in drivers_to_simulate:
+        profile = driver_profiles[driver]
+        pit_laps = run_ga()
 
-                weather_penalty = 1.0
-                if selected_weather == "Light Rain":
-                    weather_penalty = 1.05
-                elif selected_weather == "Heavy Rain":
-                    weather_penalty = 1.1
-                elif selected_weather == "Dynamic Weather" and lap % 10 == 0:
-                    weather_penalty = 1.05 + random.choice([0.0, 0.05])
+        laps = []
+        lap_times = []
+        tire_wear = []
+        fuel_load = []
+        commentary_events = []
 
-                lap_time = 90 * (1 + current_tire_wear / 1000 + current_fuel / 1000) * (1 - profile["skill"]) * weather_penalty
+        circuit_data = circuits[selected_circuit]
+        base_lap = circuit_data["base_lap_time"]
+        degradation = circuit_data["degradation"]
 
-                if lap in pit_laps:
-                    lap_time += pit_stop_time
-                    current_tire_wear = 0
+        tw = 0
+        fuel = 100
 
-                lap_times.append(lap_time)
-                tire_wear.append(current_tire_wear)
-                fuel_load.append(current_fuel)
+        for lap in range(1, race_length + 1):
+            tw += degradation * 100 / race_length
+            fuel -= 100 / race_length
+            lap_time = base_lap * (1 + tw / 1000 + fuel / 1000) * (1 - profile["skill"])
 
-            race_data.append({
-                "driver": driver,
-                "lap_times": lap_times,
-                "tire_wear": tire_wear,
-                "fuel_load": fuel_load,
-                "pit_laps": pit_laps
-            })
+            if lap in pit_laps:
+                lap_time += pit_stop_time
+                tw = 0
+                event = "pits!"
+                commentary_events.append(generate_commentary(driver, lap, event))
+            else:
+                event = "is racing smoothly"
+                if random.random() < 0.05:
+                    event = "sets the fastest lap!"
+                commentary_events.append(generate_commentary(driver, lap, event))
 
-        # === VISUALIZATION === #
-        st.header("🏎️ Multi-driver Race Simulation Results")
+            laps.append(lap)
+            lap_times.append(lap_time)
+            tire_wear.append(tw)
+            fuel_load.append(fuel)
 
+        race_results.append({
+            "driver": driver,
+            "laps": laps,
+            "lap_times": lap_times,
+            "tire_wear": tire_wear,
+            "fuel_load": fuel_load,
+            "pit_laps": pit_laps,
+            "total_time": sum(lap_times),
+            "commentary": commentary_events
+        })
+
+    # === Sort by total time === #
+    race_results.sort(key=lambda x: x["total_time"])
+
+    # === Leaderboards === #
+    points_system = [25, 18, 15, 12, 10]
+    for idx, data in enumerate(race_results):
+        driver_points[data["driver"]] += points_system[idx]
+        for team, t in teams.items():
+            if data["driver"] in t["drivers"]:
+                constructor_points[team] += points_system[idx]
+
+    # === Results === #
+    st.header("🏁 Final Results")
+    df_results = pd.DataFrame({
+        "Position": list(range(1, len(race_results) + 1)),
+        "Driver": [r["driver"] for r in race_results],
+        "Total Time (s)": [round(r["total_time"], 2) for r in race_results]
+    })
+    st.table(df_results)
+
+    # === Race Replay === #
+    st.subheader("🎥 Race Replay & Audio Commentary")
+
+    for lap in range(1, race_length + 1):
+        st.markdown(f"### Lap {lap}")
         fig = go.Figure()
-        for data in race_data:
-            fig.add_trace(go.Scatter(
-                x=np.arange(1, race_length + 1),
-                y=data["lap_times"],
-                mode='lines+markers',
-                name=data["driver"]
-            ))
+
+        for data in race_results:
+            if lap <= len(data["laps"]):
+                fig.add_trace(go.Scatter(
+                    x=[lap],
+                    y=[data["lap_times"][lap - 1]],
+                    mode='markers',
+                    marker=dict(size=12),
+                    name=data["driver"]
+                ))
+                # Play commentary for this lap
+                play_audio(data["commentary"][lap - 1])
 
         fig.update_layout(
-            title="Lap Times for All Drivers",
-            template='plotly_dark',
-            xaxis_title='Lap',
-            yaxis_title='Lap Time (s)'
+            title=f"Lap {lap} Times",
+            xaxis_title="Lap",
+            yaxis_title="Lap Time (s)",
+            template="plotly_dark"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
+        time.sleep(1)
 
-        # === PIT STRATEGY VISUAL === #
-        st.subheader("🔧 Pit Stop Strategies")
-        for data in race_data:
-            st.markdown(f"**{data['driver']}** Pit Stops at: {data['pit_laps']}")
+    # === Leaderboards === #
+    st.subheader("🏆 Driver Championship Leaderboard")
+    st.table(pd.DataFrame(driver_points.items(), columns=["Driver", "Points"]).sort_values(by="Points", ascending=False))
 
-        # === TELEMETRY === #
-        st.subheader("📊 Live Telemetry (Real Race Lap Times)")
-        telemetry = load_live_telemetry()
-        if telemetry is not None:
-            fig_telemetry = go.Figure()
-            fig_telemetry.add_trace(go.Scatter(
-                y=telemetry,
-                x=np.arange(1, len(telemetry) + 1),
-                mode='lines+markers',
-                name=f"{selected_driver} Real Lap Times"
-            ))
-            fig_telemetry.update_layout(
-                title="Real Lap Times from FastF1",
-                template='plotly_dark',
-                xaxis_title='Lap',
-                yaxis_title='Lap Time (s)'
-            )
-            st.plotly_chart(fig_telemetry, use_container_width=True)
+    st.subheader("🏆 Constructor Championship Leaderboard")
+    st.table(pd.DataFrame(constructor_points.items(), columns=["Team", "Points"]).sort_values(by="Points", ascending=False))
 
-        # === DOWNLOAD DATA === #
-        st.subheader("📥 Download Race Data")
-        df = pd.DataFrame({
-            "Lap": np.arange(1, race_length + 1)
-        })
-        for data in race_data:
-            df[data["driver"] + "_LapTime"] = data["lap_times"]
-
-        csv = df.to_csv(index=False)
-        st.download_button("Download CSV", csv, "race_data.csv", "text/csv")
-
-        st.sidebar.success("✅ Simulation Complete!")
