@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import fastf1
 import pygad
 
-# Enable FastF1 Cache
+# === Enable FastF1 Cache === #
 CACHE_DIR = "./cache"
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
@@ -30,7 +30,13 @@ selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
 selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
 degradation_base = teams[selected_team]["degradation_factor"]
 team_colors = teams[selected_team]["color"]
-st.sidebar.markdown(f"### Base Degradation Factor: {degradation_base}")
+
+# === Team Logo & Driver Photo === #
+team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
+driver_image_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
+
+st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
+st.sidebar.image(driver_image_path, caption=selected_driver, use_container_width=True)
 
 # === SIMULATION SETTINGS === #
 st.sidebar.header("⚙️ Simulation Settings")
@@ -113,7 +119,6 @@ if run_simulation:
             ))
             fig_lap_times.update_layout(
                 title='Lap Times Over Race', template='plotly_dark',
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 font=dict(color='white'), xaxis_title='Lap', yaxis_title='Time (s)', height=400
             )
             st.plotly_chart(fig_lap_times, use_container_width=True)
@@ -126,7 +131,6 @@ if run_simulation:
             ))
             fig_tire_wear.update_layout(
                 title='Tire Wear Over Race', template='plotly_dark',
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 font=dict(color='white'), xaxis_title='Lap', yaxis_title='Tire Wear (%)', height=400
             )
             st.plotly_chart(fig_tire_wear, use_container_width=True)
@@ -141,7 +145,6 @@ if run_simulation:
             ))
             fig_fuel_load.update_layout(
                 title='Fuel Load Over Race', template='plotly_dark',
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 font=dict(color='white'), xaxis_title='Lap', yaxis_title='Fuel Load (%)', height=400
             )
             st.plotly_chart(fig_fuel_load, use_container_width=True)
@@ -156,11 +159,9 @@ if run_simulation:
             mode='markers', marker=dict(size=12, color='red'), name='Pit Stops'
         ))
         fig_pit.update_layout(
-            template='plotly_dark', paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'),
+            template='plotly_dark', font=dict(color='white'),
             xaxis_title='Lap', yaxis_title='Pit Stop Time (s)', height=400
         )
         st.plotly_chart(fig_pit, use_container_width=True)
 
         st.sidebar.success("Simulation Complete!")
-
