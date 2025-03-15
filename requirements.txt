@@ -6,5 +6,6 @@ pandas
 pyngrok
 fastf1
 Pillow
+gTTS
 
 
