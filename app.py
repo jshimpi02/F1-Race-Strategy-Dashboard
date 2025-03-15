@@ -87,7 +87,7 @@ def run_ga():
         keep_parents=2,
         crossover_type="single_point",
         mutation_type="random",
-        stop_criteria=["saturate_20"]  # ✅ Corrected stop_criteria
+        stop_criteria=["saturate_20"]  
     )
 
     ga_instance.run()
@@ -102,10 +102,10 @@ if run_simulation:
     with st.spinner("Running simulation..."):
         best_pit_laps = run_ga()
         
-        # Generate race data
+        # Generate dynamic race data
         laps = np.arange(1, race_length + 1)
-        lap_times = np.random.normal(90, 2, size=race_length)
-        tire_wear = np.maximum(0, 100 - degradation_base * laps * 100)
+        lap_times = np.random.normal(90, 2, size=race_length) - (profile["skill"] * 3)
+        tire_wear = np.maximum(0, 100 - (degradation_base * laps * 100) + (profile["aggression"] * 10))
         fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
 
         # === VISUALS === #
