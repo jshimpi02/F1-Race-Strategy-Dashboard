@@ -125,4 +125,124 @@ fig_track.add_trace(go.Scatter(
     y=[track[0][1]],
     mode='markers',
     marker=dict(size=10, color='red'),
-    name='Start
+    name='Start/Finish'
+))
+
+fig_track.update_layout(
+    template=template,
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    height=500,
+    margin=dict(t=10, b=10, l=10, r=10),
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False)
+)
+
+st.plotly_chart(fig_track, use_container_width=True)
+
+# ==== SIMULATION DATA (Mockup based on settings) ====
+laps = np.arange(1, race_length + 1)
+lap_times = np.random.normal(90, 1.5, size=race_length)
+tire_wear = np.clip(100 - (laps * 1.5), 0, 100)
+fuel_load = np.clip(100 - (laps * 2), 0, 100)
+
+# ==== LAP TIMES & TELEMETRY ====
+st.subheader("📊 Lap Times & Telemetry")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    fig_lap_times = go.Figure()
+    fig_lap_times.add_trace(go.Scatter(
+        x=laps,
+        y=lap_times,
+        mode='lines+markers',
+        name='Lap Time',
+        line=dict(color=team_colors[0], width=3)
+    ))
+    fig_lap_times.update_layout(
+        title='Lap Times',
+        template=template,
+        height=400,
+        xaxis_title='Lap',
+        yaxis_title='Time (s)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+    )
+    st.plotly_chart(fig_lap_times, use_container_width=True)
+
+with col2:
+    fig_fuel = go.Figure()
+    fig_fuel.add_trace(go.Scatter(
+        x=laps,
+        y=fuel_load,
+        mode='lines+markers',
+        name='Fuel Load',
+        line=dict(color='yellow', width=3)
+    ))
+    fig_fuel.update_layout(
+        title='Fuel Load Over Race',
+        template=template,
+        height=400,
+        xaxis_title='Lap',
+        yaxis_title='Fuel (%)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+    )
+    st.plotly_chart(fig_fuel, use_container_width=True)
+
+# ==== TIRE WEAR ====
+st.subheader("🛞 Tire Wear Progression")
+
+fig_tire = go.Figure()
+fig_tire.add_trace(go.Scatter(
+    x=laps,
+    y=tire_wear,
+    mode='lines+markers',
+    name='Tire Wear',
+    line=dict(color='orange', width=3)
+))
+fig_tire.update_layout(
+    template=template,
+    height=400,
+    xaxis_title='Lap',
+    yaxis_title='Tire Wear (%)',
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+)
+st.plotly_chart(fig_tire, use_container_width=True)
+
+# ==== PIT STRATEGY ====
+st.subheader("🔧 Pit Stop Strategy")
+
+fig_pit = go.Figure()
+fig_pit.add_trace(go.Scatter(
+    x=best_pit_stops if best_pit_stops else [],
+    y=[pit_stop_time] * len(best_pit_stops),
+    mode='markers',
+    marker=dict(size=12, color='red'),
+    name='Pit Stop'
+))
+fig_pit.update_layout(
+    template=template,
+    height=400,
+    xaxis_title='Lap',
+    yaxis_title='Pit Stop Time (s)',
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+)
+st.plotly_chart(fig_pit, use_container_width=True)
+
+# ==== LEADERBOARD ====
+st.subheader("🏆 Driver Standings (Mockup)")
+
+driver_standings = pd.DataFrame({
+    "Driver": ["Max Verstappen", "Lewis Hamilton", "Charles Leclerc", "George Russell", "Lando Norris"],
+    "Team": ["Red Bull Racing", "Mercedes", "Ferrari", "Mercedes", "McLaren"],
+    "Points": [290, 230, 210, 190, 185]
+})
+
+st.table(driver_standings)
+
+st.sidebar.success("Simulation & Telemetry Loaded Successfully!")
+
