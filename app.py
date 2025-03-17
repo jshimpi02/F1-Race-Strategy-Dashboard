@@ -102,18 +102,16 @@ driver_data = session.laps.pick_driver(selected_driver.split()[1].upper())
 
 circuit_info = session.get_circuit_info()
 
-track_name = circuit_info.name if hasattr(circuit_info, 'name') else "Unknown Track"
-track_location = circuit_info.location if hasattr(circuit_info, 'location') else "Unknown Location"
-track_country = circuit_info.country if hasattr(circuit_info, 'country') else "Unknown Country"
+circuit_info = session.get_circuit_info()
+
+track_name = getattr(circuit_info, 'name', 'Unknown Track')
+track_location = getattr(circuit_info, 'location', 'Unknown Location')
+track_country = getattr(circuit_info, 'country', 'Unknown Country')
 
 st.title(f"🏎️ {selected_driver} | {selected_team} - {track_name} GP")
 st.markdown(f"**Circuit:** {track_name} | Location: {track_location}, {track_country}")
 st.markdown("---")
 
-
-st.title(f"🏎️ {selected_driver} | {selected_team} - Silverstone GP")
-st.markdown(f"**Circuit:** {track_map}")
-st.markdown("---")
 
 # ==== CIRCUIT TRACK ANIMATION ====
 st.subheader("📍 Circuit Track Map (Silverstone)")
