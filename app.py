@@ -197,6 +197,65 @@ with col2:
     st.subheader("Constructors")
     st.table(teams_leaderboard)
 
+# === CIRCUIT PATH ANIMATION ===
+st.header("🏎️ Silverstone Circuit Animation (Lap Preview)")
+
+# Dummy simplified Silverstone circuit path
+silverstone_coords = [
+    (0, 0), (10, 5), (20, 10), (30, 5), (40, 0), (30, -5), (20, -10), (10, -5), (0, 0)
+]
+circuit_df = pd.DataFrame(silverstone_coords, columns=["x", "y"])
+
+# Generate frames for animation
+frames = []
+for i in range(1, len(circuit_df) + 1):
+    frame = go.Frame(
+        data=[
+            go.Scatter(
+                x=circuit_df["x"][:i],
+                y=circuit_df["y"][:i],
+                mode="lines+markers",
+                line=dict(color="#FF4136", width=4),
+                marker=dict(size=12, color="#FFDC00", symbol="circle"),
+                name=selected_driver
+            )
+        ],
+        name=f"Lap {i}"
+    )
+    frames.append(frame)
+
+# Base figure
+fig_circuit = go.Figure(
+    data=[
+        go.Scatter(
+            x=[circuit_df["x"][0]],
+            y=[circuit_df["y"][0]],
+            mode="markers+text",
+            marker=dict(size=14, color="green"),
+            text=["Start"],
+            textposition="top center"
+        )
+    ],
+    layout=go.Layout(
+        title="🏁 Silverstone Circuit Animation",
+        xaxis=dict(range=[-20, 60], title="X Coordinate"),
+        yaxis=dict(range=[-20, 20], title="Y Coordinate"),
+        template="plotly_dark" if mode == "Dark" else "plotly_white",
+        updatemenus=[dict(
+            type="buttons",
+            showactive=False,
+            buttons=[
+                dict(label="Play", method="animate", args=[None, {"frame": {"duration": 500, "redraw": True}, "fromcurrent": True}]),
+                dict(label="Pause", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])
+            ]
+        )]
+    ),
+    frames=frames
+)
+
+st.plotly_chart(fig_circuit, use_container_width=True)
+
+
 # === CIRCUIT BACKGROUND ===
 st.markdown("### 🏁 Silverstone Circuit Layout")
 st.image("assets/circuits/silverstone_layout.png", use_container_width=True)
