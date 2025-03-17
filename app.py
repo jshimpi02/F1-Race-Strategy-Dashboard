@@ -116,38 +116,34 @@ st.markdown("---")
 # ==== CIRCUIT TRACK ANIMATION ====
 st.subheader("📍 Circuit Track Map (Silverstone)")
 
-circuit_info = session.get_circuit_info()
-track_layout = getattr(circuit_info, 'layout', None)
+# Simulated dummy track layout (you can replace this with actual track points)
+track_x = [0, 1, 2, 3, 4, 3, 2, 1, 0]
+track_y = [0, 1, 2, 3, 4, 5, 6, 5, 4]
 
 fig_track = go.Figure()
 
+# Plot the track line
 fig_track.add_trace(go.Scatter(
-    x=[p[0] for p in track],
-    y=[p[1] for p in track],
-    mode='lines',
-    line=dict(color='white', width=3),
-    name='Track Layout'
-))
-
-fig_track.add_trace(go.Scatter(
-    x=[track[0][0]],
-    y=[track[0][1]],
-    mode='markers',
-    marker=dict(size=10, color='red'),
-    name='Start/Finish'
+    x=track_x,
+    y=track_y,
+    mode='lines+markers',
+    name='Circuit Path',
+    line=dict(color='white', width=3)
 ))
 
 fig_track.update_layout(
-    template=template,
+    title='Silverstone Circuit Layout (Simulated)',
+    template='plotly_dark',
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(0,0,0,0)',
-    height=500,
-    margin=dict(t=10, b=10, l=10, r=10),
-    xaxis=dict(visible=False),
-    yaxis=dict(visible=False)
+    font=dict(color='white'),
+    xaxis=dict(showgrid=False, zeroline=False, visible=False),
+    yaxis=dict(showgrid=False, zeroline=False, visible=False),
+    height=500
 )
 
 st.plotly_chart(fig_track, use_container_width=True)
+
 
 # ==== SIMULATION DATA (Mockup based on settings) ====
 laps = np.arange(1, race_length + 1)
