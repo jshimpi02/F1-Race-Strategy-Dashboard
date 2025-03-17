@@ -116,7 +116,9 @@ st.markdown("---")
 # ==== CIRCUIT TRACK ANIMATION ====
 st.subheader("📍 Circuit Track Map (Silverstone)")
 
-track = session.get_circuit_info()['Layout']
+circuit_info = session.get_circuit_info()
+track_layout = getattr(circuit_info, 'layout', None)
+
 fig_track = go.Figure()
 
 fig_track.add_trace(go.Scatter(
