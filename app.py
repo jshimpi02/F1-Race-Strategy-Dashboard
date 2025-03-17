@@ -42,6 +42,56 @@ driver_photo_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}
 st.sidebar.image(team_logo_path, width=100)
 st.sidebar.image(driver_photo_path, width=100)
 
+# === CIRCUIT TRACK MAP DISPLAY === #
+st.markdown("## 🏁 Silverstone Circuit Layout")
+
+circuit_image_path = "assets/circuits/silverstone_layout.png"
+
+# Display the circuit map (adjust width or height if needed)
+st.image(circuit_image_path, caption="Silverstone Circuit", use_container_width=True)
+
+import plotly.graph_objects as go
+
+# Simulate coordinates for a lap around Silverstone (replace with real telemetry if available)
+laps = list(range(1, 11))
+x_coords = [20, 30, 50, 70, 100, 130, 160, 140, 90, 40]  # Example X positions
+y_coords = [20, 40, 60, 50, 40, 30, 20, 10, 15, 25]      # Example Y positions
+
+# Create a Plotly figure for animated telemetry path
+fig = go.Figure()
+
+fig.add_trace(go.Scatter(
+    x=x_coords,
+    y=y_coords,
+    mode="lines+markers",
+    marker=dict(size=10, color=team_colors[0]),
+    line=dict(width=2, color=team_colors[1]),
+    name=f"{selected_driver}'s Path"
+))
+
+fig.update_layout(
+    title=f"{selected_driver} Lap Telemetry - Silverstone",
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+    template="plotly_dark",
+    height=600,
+    images=[dict(
+        source=circuit_image_path,
+        xref="x",
+        yref="y",
+        x=0,
+        y=100,
+        sizex=200,
+        sizey=100,
+        sizing="stretch",
+        opacity=0.5,
+        layer="below"
+    )]
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+
 # ==== SIMULATION SETTINGS ====
 race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 52)
 pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (s)", 18, 30, 22)
