@@ -77,21 +77,39 @@ def fitness_func(ga_instance, solution, solution_idx):
     return -time  # Negative because PyGAD maximizes fitness
 
 def run_ga():
-    gene_space = [list(range(race_length))]  # Lap numbers for pit stops
+    race_length = 56  # Customize if your race length changes
+    num_pit_stops = 3  # You can adjust this based on strategy
+
+    def fitness_func(ga_instance, solution, solution_idx):
+        # Dummy fitness calculation for now
+        # Example: penalize close pit stops, reward spacing
+        spacing_penalty = sum([
+            abs(solution[i] - solution[i - 1]) < 5  # penalize pit stops too close
+            for i in range(1, len(solution))
+        ])
+        return 100 - spacing_penalty  # Higher is better
+
+    gene_space = [{'low': 1, 'high': race_length} for _ in range(num_pit_stops)]
 
     ga_instance = pygad.GA(
-        num_generations=20,
+        num_generations=50,
         num_parents_mating=5,
         fitness_func=fitness_func,
         sol_per_pop=10,
-        num_genes=3,
+        num_genes=num_pit_stops,
         gene_space=gene_space,
-        stop_criteria=["reach_0"]
+        mutation_percent_genes=20,
+        stop_criteria=["reach_100"]  # Example stopping criteria
     )
-    
+
     ga_instance.run()
-    solution, solution_fitness, _ = ga_instance.best_solution()
-    return sorted(solution.astype(int))
+
+    best_solution, best_solution_fitness, _ = ga_instance.best_solution()
+    print(f"Best Pit Stop Strategy (Laps): {best_solution}")
+    print(f"Fitness Score: {best_solution_fitness}")
+
+    return best_solution
+
 
 # === SESSION STATE TO CONTROL RE-RUNS ===
 if "race_run" not in st.session_state:
