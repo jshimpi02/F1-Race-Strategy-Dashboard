@@ -7,8 +7,13 @@ import pygad
 import fastf1
 from fastf1 import plotting
 
-# Enable caching for faster telemetry loading
-fastf1.Cache.enable_cache('cache')
+# Create the cache directory if it doesn't exist
+cache_dir = 'cache'
+if not os.path.exists(cache_dir):
+    os.makedirs(cache_dir)
+
+# Enable FastF1 cache
+fastf1.Cache.enable_cache(cache_dir)
 
 # ==== PAGE CONFIG ====
 st.set_page_config(page_title="🏎️ F1 Race Strategy - Silverstone GP", layout="wide")
