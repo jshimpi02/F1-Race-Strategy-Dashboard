@@ -11,10 +11,6 @@ from fastf1 import plotting
 import pygad
 import time
 
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-import gymnasium as gym
-from gymnasium import spaces
 
 # === STREAMLIT CONFIG ===
 st.set_page_config(page_title="🏎️ F1 Race Strategy Dashboard", layout="wide")
