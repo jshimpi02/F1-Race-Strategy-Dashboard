@@ -68,7 +68,7 @@ fig_circuit = go.Figure()
 
 # Add Circuit Image
 fig_circuit.add_layout_image(dict(
-    source="assets/silverstone.png",
+    source="assets/silverstone_layout.png",
     x=0,
     y=0,
     sizex=500,
