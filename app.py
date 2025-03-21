@@ -59,6 +59,7 @@ with st.spinner(f"Loading {gp_name} GP {session_type} session..."):
 
 circuit_info = session.get_circuit_info()
 st.subheader(f"📍 Circuit: {circuit_info.name}")
+st.write(circuit_info)
 
 # === TELEMETRY DATA === #
 drivers = session.laps["Driver"].unique()
