@@ -57,9 +57,21 @@ with st.spinner(f"Loading {gp_name} GP {session_type} session..."):
     session.load()  # historical data
     st.success(f"Loaded {gp_name} {session_type} Session!")
 
+#circuit_info = session.get_circuit_info()
+#st.subheader(f"📍 Circuit: {circuit_info.name}")
+#st.write(circuit_info)
+
+# Fetch circuit info
 circuit_info = session.get_circuit_info()
-st.subheader(f"📍 Circuit: {circuit_info.name}")
-st.write(circuit_info)
+
+# Safely get the circuit name, location, country
+circuit_name = circuit_info.get('Name', 'Unknown Circuit')
+location = circuit_info.get('Location', 'Unknown Location')
+country = circuit_info.get('Country', 'Unknown Country')
+
+# Display circuit details
+st.subheader(f"📍 Circuit: {circuit_name}")
+st.caption(f"📍 Location: {location}, {country}")
 
 # === TELEMETRY DATA === #
 drivers = session.laps["Driver"].unique()
