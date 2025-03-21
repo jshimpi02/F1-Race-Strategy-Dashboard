@@ -1,216 +1,286 @@
-# ==== IMPORTS ====
 import os
-os.environ["PYTORCH_JIT"] = "0"
-
 import streamlit as st
 import numpy as np
 import pandas as pd
-import fastf1
-from fastf1.api import Cache
 import plotly.graph_objects as go
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-import gymnasium as gym
-from gymnasium import spaces
+import fastf1
+from fastf1 import plotting
+from datetime import datetime
+import pygad
 
-# ==== ENABLE CACHE ====
+# === CONFIGURATION === #
+st.set_page_config(page_title="🏎️ F1 Race Strategy - Silverstone Live", layout="wide")
+st.title("🏎️ F1 Race Strategy Dashboard - Silverstone GP 2025")
+
+# === CACHE FOR FASTF1 === #
 if not os.path.exists('cache'):
     os.makedirs('cache')
 fastf1.Cache.enable_cache('cache')
 
-# ==== PAGE CONFIG ====
-st.set_page_config(page_title="🏎️ F1 Race Strategy & Telemetry Dashboard", layout="wide")
+# === THEME TOGGLE === #
+theme = st.sidebar.radio("Choose Theme", ["Dark", "Light"])
+plotly_theme = "plotly_dark" if theme == "Dark" else "plotly_white"
 
-# ==== THEME TOGGLE ====
-dark_mode = st.sidebar.checkbox("🌙 Dark Mode", True)
-theme_template = 'plotly_dark' if dark_mode else 'plotly_white'
-st.markdown(f"<style>body {{ background-color: {'#0e1117' if dark_mode else '#ffffff'} }}</style>", unsafe_allow_html=True)
-
-# ==== HEADER ====
-st.sidebar.image("assets/f1_logo.png", width=150)
-st.title("🏎️ F1 Strategy + Telemetry + Leaderboards")
-st.markdown("---")
-
-# ==== TEAMS & DRIVERS ====
+# === TEAM SETUP === #
 teams = {
-    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "color": ["#00D2BE", "#FFFFFF"]},
-    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "color": ["#1E41FF", "#FFD700"]},
-    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "color": ["#DC0000", "#FFFFFF"]},
-    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "color": ["#FF8700", "#FFFFFF"]}
+    "Mercedes": {"drivers": ["Lewis Hamilton", "George Russell"], "degradation_factor": 0.20, "color": ["#00D2BE", "#FFFFFF"]},
+    "Red Bull Racing": {"drivers": ["Max Verstappen", "Sergio Perez"], "degradation_factor": 0.15, "color": ["#1E41FF", "#FFD700"]},
+    "Ferrari": {"drivers": ["Charles Leclerc", "Carlos Sainz"], "degradation_factor": 0.25, "color": ["#DC0000", "#FFFFFF"]},
+    "McLaren": {"drivers": ["Lando Norris", "Oscar Piastri"], "degradation_factor": 0.30, "color": ["#FF8700", "#FFFFFF"]}
 }
 
-selected_team = st.sidebar.selectbox("Select Your Team", list(teams.keys()))
-selected_driver = st.sidebar.selectbox("Select Your Driver", teams[selected_team]["drivers"])
+# === USER SELECTIONS === #
+selected_team = st.sidebar.selectbox("Select Team", list(teams.keys()))
+selected_driver = st.sidebar.selectbox("Select Driver", teams[selected_team]["drivers"])
+degradation_base = teams[selected_team]["degradation_factor"]
 team_colors = teams[selected_team]["color"]
 
-st.sidebar.image(f"assets/logos/{selected_team.lower().replace(' ', '_')}.png", caption=selected_team, use_container_width=True)
-st.sidebar.image(f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png", caption=selected_driver, use_container_width=True)
-
-# ==== SIMULATION SETTINGS ====
-race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 56)
-num_opponents = st.sidebar.slider("Number of Opponents", 3, 10, 5)
+# === SIMULATION SETTINGS === #
+race_length = st.sidebar.slider("Race Length (Laps)", 30, 70, 52)
 pit_stop_time = st.sidebar.slider("Pit Stop Time Loss (seconds)", 15, 30, 22)
 
-# ==== FASTF1 SESSION ====
-session = fastf1.get_session(2023, 'Silverstone', 'R')
-session.load(laps=True, telemetry=True)
+# === CIRCUIT + SESSION === #
+year = 2024
+gp_name = "Silverstone"
+session_type = "R"
 
-driver_abbr = selected_driver.split()[-1].upper()[:3]
-laps_data = session.laps.pick_driver(driver_abbr)
-telemetry_data = laps_data.iloc[0].get_car_data().add_distance()
+with st.spinner(f"Loading {gp_name} GP {session_type} session..."):
+    session = fastf1.get_session(year, gp_name, session_type)
+    session.load(live_timing_data=True)
+    st.success(f"Loaded {gp_name} {session_type} Session!")
 
-x_coords = telemetry_data['X']
-y_coords = telemetry_data['Y']
+circuit_info = session.get_circuit_info()
+st.subheader(f"📍 Circuit: {circuit_info.name}")
+st.markdown(f"**Location:** {circuit_info.location} | **Length:** {circuit_info.length} km | **Turns:** {circuit_info.number_of_corners}")
 
-# ==== CIRCUIT MAP ====
-st.subheader("📍 Silverstone Circuit Track Map")
-fig_circuit = go.Figure()
-
-# Add Circuit Image
-fig_circuit.add_layout_image(dict(
-    source="assets/silverstone_layout.png",
-    x=0,
-    y=0,
-    sizex=500,
-    sizey=500,
-    xref="x",
-    yref="y",
-    opacity=0.5,
-    layer="below"
-))
-
-# Driver Telemetry Path
-fig_circuit.add_trace(go.Scatter(x=x_coords, y=y_coords, mode="lines", line=dict(color='cyan', width=2)))
-fig_circuit.add_trace(go.Scatter(x=[x_coords.iloc[0]], y=[y_coords.iloc[0]], mode="markers", marker=dict(size=10, color="red")))
-
-fig_circuit.update_layout(title="Telemetry Lap Path", xaxis=dict(visible=False), yaxis=dict(visible=False), height=500, template=theme_template)
-st.plotly_chart(fig_circuit, use_container_width=True)
-
-# ==== RL ENVIRONMENT ====
-class F1PitStopEnv(gym.Env):
-    def __init__(self):
-        super(F1PitStopEnv, self).__init__()
-        self.action_space = spaces.Discrete(race_length)
-        self.observation_space = spaces.Box(low=0, high=1, shape=(3,), dtype=np.float32)
-        self.reset()
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        self.current_lap = 0
-        self.total_time = 0
-        obs = np.array([0, 0, 0], dtype=np.float32)
-        info = {}
-        return obs, info
-
-    def step(self, action):
-        pit = 1 if action == self.current_lap else 0
-        lap_time = 90 + pit * pit_stop_time
-        self.total_time += lap_time
-        reward = -lap_time
-        self.current_lap += 1
-        done = self.current_lap >= race_length
-
-        obs = np.array([self.current_lap / race_length, lap_time / 120, pit], dtype=np.float32)
-        info = {}
-        return obs, reward, done, info
-
-# ==== TRAIN & SIMULATE ====
-train_agent = st.sidebar.button("🚀 Train RL Agent")
-run_simulation = st.sidebar.button("🏁 Run Simulation")
-
-if train_agent:
-    with st.spinner("Training RL agent..."):
-        env = DummyVecEnv([lambda: F1PitStopEnv()])
-        model = PPO("MlpPolicy", env, verbose=0)
-        model.learn(total_timesteps=5000)
-        model.save("ppo_f1_pit_agent")
-    st.sidebar.success("Training Complete! ✅")
-
-# ==== MULTI-DRIVER SIMULATION ====
-def simulate_opponents(num_drivers, race_length):
-    positions = np.arange(1, num_drivers + 1)
-    lap_times = np.random.normal(90, 5, size=(num_drivers, race_length))
-    return positions, lap_times
-
-if run_simulation:
-    with st.spinner("Running Race Simulation..."):
-        env = DummyVecEnv([lambda: F1PitStopEnv()])
-        model = PPO.load("ppo_f1_pit_agent")
-
-        obs = env.reset()
-        pit_decisions = []
-        done = [False]
-
-        driver_lap_times = []
-        for lap in range(race_length):
-            action, _ = model.predict(obs)
-            obs, rewards, dones, infos = env.step(action)
-            lap_time = 90 + pit_stop_time if int(action) == lap else 90
-            driver_lap_times.append(lap_time)
-
-            if int(action) == lap:
-                pit_decisions.append(lap)
-
-            if dones[0]:
-                break
-
-        # Opponent Simulation
-        positions, opponent_laps = simulate_opponents(num_opponents, race_length)
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            fig_laps = go.Figure()
-            fig_laps.add_trace(go.Scatter(y=driver_lap_times, x=np.arange(1, race_length + 1), mode='lines+markers', name=selected_driver, line=dict(color=team_colors[0])))
-            for idx in range(num_opponents):
-                fig_laps.add_trace(go.Scatter(y=opponent_laps[idx], x=np.arange(1, race_length + 1), mode='lines', name=f"Driver {idx+1}"))
-
-            fig_laps.update_layout(title="Lap Times Comparison", template=theme_template)
-            st.plotly_chart(fig_laps, use_container_width=True)
-
-        with col2:
-            fig_positions = go.Figure()
-            total_times = [sum(driver_lap_times)] + [sum(opponent_laps[idx]) for idx in range(num_opponents)]
-            sorted_times = sorted(zip(total_times, [selected_driver] + [f"Driver {idx+1}" for idx in range(num_opponents)]))
-            drivers_sorted = [d for _, d in sorted_times]
-            times_sorted = [t for t, _ in sorted_times]
-
-            fig_positions.add_trace(go.Bar(y=drivers_sorted, x=times_sorted, orientation='h', marker_color='cyan'))
-            fig_positions.update_layout(title="Final Race Positions (Time)", template=theme_template)
-            st.plotly_chart(fig_positions, use_container_width=True)
-
-        st.success("Simulation Complete!")
-
-# ==== LEADERBOARDS ====
 st.markdown("---")
-st.subheader("🏆 2025 F1 Leaderboards")
 
-# Sample Leaderboard Data
-drivers_standings = pd.DataFrame({
-    "Driver": ["Max Verstappen", "Charles Leclerc", "Lewis Hamilton", "Lando Norris", "Carlos Sainz"],
-    "Team": ["Red Bull Racing", "Ferrari", "Mercedes", "McLaren", "Ferrari"],
-    "Points": [310, 290, 280, 250, 240]
-})
+# === TELEMETRY DATA === #
+drivers = session.laps["Driver"].unique()
+selected_drivers = st.sidebar.multiselect("Select Drivers for Telemetry", drivers.tolist(), default=drivers[:2])
 
-constructors_standings = pd.DataFrame({
-    "Team": ["Red Bull Racing", "Ferrari", "Mercedes", "McLaren"],
-    "Points": [600, 550, 500, 450]
-})
+driver_telemetry = {}
+for driver in selected_drivers:
+    laps = session.laps.pick_driver(driver).pick_fastest()
+    if laps.empty:
+        continue
+    telemetry = laps.get_car_data().add_distance()
+    driver_telemetry[driver] = {
+        "X": telemetry['X'].values,
+        "Y": telemetry['Y'].values,
+        "Speed": telemetry['Speed'].values,
+        "DRS": telemetry['DRS'].values
+    }
 
+# === TELEMETRY ANIMATION === #
+st.subheader(f"📈 Circuit Telemetry Animation - {gp_name}")
+
+frames = []
+max_frames = max([len(data["X"]) for data in driver_telemetry.values()])
+
+for i in range(0, max_frames, 10):
+    frame_data = []
+    for driver, data in driver_telemetry.items():
+        if len(data["X"]) > i:
+            drs_color = 'green' if data["DRS"][i] == 1 else 'red'
+            frame_data.append(go.Scatter(
+                x=[data["X"][i]],
+                y=[data["Y"][i]],
+                mode='markers+text',
+                marker=dict(size=10, color=drs_color),
+                text=[driver],
+                textposition='top center',
+                name=driver
+            ))
+    frames.append(go.Frame(data=frame_data, name=str(i)))
+
+layout = go.Layout(
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+    template=plotly_theme,
+    updatemenus=[dict(
+        type="buttons",
+        showactive=False,
+        buttons=[
+            dict(label="Play", method="animate", args=[None, {"frame": {"duration": 50}, "fromcurrent": True}]),
+            dict(label="Pause", method="animate", args=[[None], {"frame": {"duration": 0}, "mode": "immediate"}])
+        ]
+    )]
+)
+
+fig_track = go.Figure(frames=frames, layout=layout)
+st.plotly_chart(fig_track, use_container_width=True)
+
+# === GENETIC ALGORITHM FOR PIT STOP === #
+def fitness_func(ga_instance, solution, solution_idx):
+    pit_laps = [int(round(pit)) for pit in solution if pit >= 0 and pit < race_length]
+    total_time = 0
+    tire_wear = 0
+    current_lap = 0
+
+    for lap in range(race_length):
+        wear_penalty = degradation_base * tire_wear
+        lap_time = 90 + wear_penalty
+        total_time += lap_time
+        tire_wear += 1
+
+        if lap in pit_laps:
+            total_time += pit_stop_time
+            tire_wear = 0
+
+    return -total_time
+
+def run_ga():
+    gene_space = [{'low': 0, 'high': race_length} for _ in range(3)]
+    ga_instance = pygad.GA(
+        num_generations=20,
+        num_parents_mating=4,
+        fitness_func=fitness_func,
+        sol_per_pop=10,
+        num_genes=3,
+        gene_space=gene_space,
+        parent_selection_type="rank",
+        mutation_type="random"
+    )
+    ga_instance.run()
+    solution, solution_fitness, _ = ga_instance.best_solution()
+    pit_laps = sorted([int(round(pit)) for pit in solution if 0 <= pit < race_length])
+    return pit_laps
+
+if st.sidebar.button("🚀 Run Pit Stop Strategy"):
+    with st.spinner("Running Genetic Algorithm for Pit Strategy..."):
+        best_pit_stops = run_ga()
+        st.sidebar.success(f"Best Pit Stops: {best_pit_stops}")
+else:
+    best_pit_stops = []
+
+# === SIMULATED RACE DATA === #
+laps = np.arange(1, race_length + 1)
+lap_times = 90 + degradation_base * laps + np.random.normal(0, 0.5, race_length)
+
+for pit in best_pit_stops:
+    lap_times[pit:] += pit_stop_time
+
+lead_delta = np.cumsum(np.random.normal(0, 0.5, race_length))
+tire_wear = np.maximum(0, 100 - degradation_base * laps * 100)
+fuel_load = np.maximum(0, 100 - (laps * (100 / race_length)))
+
+# === LAP TIME GRAPH === #
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("### 👨‍💼 Drivers Championship")
-    for idx, row in drivers_standings.iterrows():
-        st.image(f"assets/drivers/{row['Driver'].lower().replace(' ', '_')}.png", width=50)
-        st.write(f"**{idx+1}. {row['Driver']}** ({row['Team']}) - {row['Points']} pts")
+    fig_lap_times = go.Figure()
+    fig_lap_times.add_trace(go.Scatter(
+        x=laps,
+        y=lap_times,
+        mode='lines+markers',
+        line=dict(color=team_colors[0], width=3),
+        name='Lap Times'
+    ))
+    fig_lap_times.update_layout(
+        title='Lap Times Over Race',
+        template=plotly_theme,
+        xaxis_title='Lap',
+        yaxis_title='Time (s)',
+        height=400
+    )
+    st.plotly_chart(fig_lap_times, use_container_width=True)
 
 with col2:
-    st.markdown("### 🏢 Constructors Championship")
-    for idx, row in constructors_standings.iterrows():
-        st.image(f"assets/logos/{row['Team'].lower().replace(' ', '_')}.png", width=50)
-        st.write(f"**{idx+1}. {row['Team']}** - {row['Points']} pts")
+    fig_lead_delta = go.Figure()
+    fig_lead_delta.add_trace(go.Scatter(
+        x=laps,
+        y=lead_delta,
+        mode='lines+markers',
+        line=dict(color=team_colors[1], width=3),
+        name='Lead Delta'
+    ))
+    fig_lead_delta.update_layout(
+        title='Lead Delta Over Race',
+        template=plotly_theme,
+        xaxis_title='Lap',
+        yaxis_title='Delta (s)',
+        height=400
+    )
+    st.plotly_chart(fig_lead_delta, use_container_width=True)
 
-# ==== FOOTER ====
+# === TIRE WEAR & FUEL LOAD === #
+col3, col4 = st.columns(2)
+
+with col3:
+    fig_tire = go.Figure()
+    fig_tire.add_trace(go.Scatter(
+        x=laps,
+        y=tire_wear,
+        mode='lines+markers',
+        line=dict(color='orange', width=3),
+        name='Tire Wear'
+    ))
+    fig_tire.update_layout(
+        title='Tire Wear Over Race',
+        template=plotly_theme,
+        xaxis_title='Lap',
+        yaxis_title='Wear (%)',
+        height=400
+    )
+    st.plotly_chart(fig_tire, use_container_width=True)
+
+with col4:
+    fig_fuel = go.Figure()
+    fig_fuel.add_trace(go.Scatter(
+        x=laps,
+        y=fuel_load,
+        mode='lines+markers',
+        line=dict(color='yellow', width=3),
+        name='Fuel Load'
+    ))
+    fig_fuel.update_layout(
+        title='Fuel Load Over Race',
+        template=plotly_theme,
+        xaxis_title='Lap',
+        yaxis_title='Fuel (%)',
+        height=400
+    )
+    st.plotly_chart(fig_fuel, use_container_width=True)
+
+# === PIT STOP STRATEGY === #
+st.subheader("🔧 Pit Stop Strategy")
+st.markdown(f"Pit Stops at Laps: {best_pit_stops}")
+
+fig_pit = go.Figure()
+fig_pit.add_trace(go.Scatter(
+    x=best_pit_stops,
+    y=[pit_stop_time] * len(best_pit_stops),
+    mode='markers',
+    marker=dict(size=12, color='red'),
+    name='Pit Stops'
+))
+fig_pit.update_layout(
+    title="Pit Stop Strategy",
+    template=plotly_theme,
+    xaxis_title='Lap',
+    yaxis_title='Pit Stop Time (s)',
+    height=400
+)
+st.plotly_chart(fig_pit, use_container_width=True)
+
+# === DRIVER LEADERBOARD === #
+st.subheader("🏆 Driver Leaderboard")
+
+driver_leaderboard = session.laps.groupby("Driver")["LapTime"].min().reset_index().sort_values("LapTime")
+driver_leaderboard["Position"] = range(1, len(driver_leaderboard) + 1)
+st.dataframe(driver_leaderboard)
+
+# === CONSTRUCTOR STANDINGS === #
+st.subheader("🏁 Constructor Standings")
+
+constructor_data = pd.DataFrame({
+    'Constructor': ["Red Bull", "Mercedes", "Ferrari", "McLaren"],
+    'Points': [640, 525, 430, 389]
+}).sort_values(by='Points', ascending=False)
+
+st.bar_chart(constructor_data.set_index('Constructor'))
+
+# === FOOTER === #
 st.markdown("---")
-st.markdown("Made for F1 Race Simulations & Analytics ❤️")
+st.caption(f"© {datetime.now().year} F1 Race Strategy | Powered by Streamlit + FastF1 + Plotly")
