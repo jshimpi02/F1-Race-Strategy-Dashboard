@@ -72,6 +72,7 @@ country = circuit_info.get('Country', 'Unknown Country')
 # Display circuit details
 st.subheader(f"📍 Circuit: {circuit_name}")
 st.caption(f"📍 Location: {location}, {country}")
+st.write(circuit_info.__dict__)
 
 # === TELEMETRY DATA === #
 drivers = session.laps["Driver"].unique()
