@@ -31,7 +31,15 @@ teams = {
 
 # === USER SELECTIONS === #
 selected_team = st.sidebar.selectbox("Select Team", list(teams.keys()))
+
+team_logo_path = f"assets/logos/{selected_team.lower().replace(' ', '_')}.png"
+st.sidebar.image(team_logo_path, caption=selected_team, use_container_width=True)
+
 selected_driver = st.sidebar.selectbox("Select Driver", teams[selected_team]["drivers"])
+
+driver_photo_path = f"assets/drivers/{selected_driver.lower().replace(' ', '_')}.png"
+st.sidebar.image(driver_photo_path, caption=selected_driver, use_container_width=True)
+
 degradation_base = teams[selected_team]["degradation_factor"]
 team_colors = teams[selected_team]["color"]
 
@@ -46,14 +54,11 @@ session_type = "R"
 
 with st.spinner(f"Loading {gp_name} GP {session_type} session..."):
     session = fastf1.get_session(year, gp_name, session_type)
-    session.load(live_timing_data=True)
+    session.load()  # historical data
     st.success(f"Loaded {gp_name} {session_type} Session!")
 
 circuit_info = session.get_circuit_info()
 st.subheader(f"📍 Circuit: {circuit_info.name}")
-st.markdown(f"**Location:** {circuit_info.location} | **Length:** {circuit_info.length} km | **Turns:** {circuit_info.number_of_corners}")
-
-st.markdown("---")
 
 # === TELEMETRY DATA === #
 drivers = session.laps["Driver"].unique()
