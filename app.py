@@ -65,7 +65,7 @@ circuit_info = session.get_circuit_info()
 
 st.subheader(f"📍 Circuit: {circuit_info.name}")
 st.markdown(f"**Location:** {circuit_info.location}, {circuit_info.country}")
-st.markdown(f"**Length:** {circuit_info.length} m")
+st.markdown(f"**Circuit Length:** {circuit_info.length} m")
 
 # === CIRCUIT ANIMATION === #
 st.subheader("📍 Silverstone Track Map")
