@@ -10,6 +10,7 @@ from fastf1 import plotting
 import pygad
 import random
 import datetime
+import io
 
 # Set Streamlit page config
 st.set_page_config(page_title="🏎️ F1 Race Strategy Dashboard", layout="wide")
