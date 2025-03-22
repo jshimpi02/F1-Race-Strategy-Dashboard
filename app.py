@@ -54,19 +54,26 @@ degradation_base = teams[selected_team]["degradation_factor"]
 team_colors = teams[selected_team]["color"]
 
 # === SESSION & CIRCUIT INFO === #
-gp_year = 2023
-gp_name = 'Silverstone'
-session_type = 'R'
+circuit_metadata = {
+    "Name": "Silverstone Circuit",
+    "Location": "Silverstone, UK",
+    "Country": "United Kingdom",
+    "Length": 5891.65,  # meters
+    "Turns": 18
+}
 
-session = fastf1.get_session(gp_year, gp_name, session_type)
-session.load(laps=True, telemetry=True)
+# Basic Info
+st.subheader(f"📍 Circuit: {circuit_metadata['Name']}")
+st.markdown(f"**Country:** {circuit_metadata['Country']}")
+st.markdown(f"**Length:** {circuit_metadata['Length']} m")
+st.markdown(f"**Number of Turns:** {circuit_metadata['Turns']}")
 
-circuit_info = session.get_circuit_info()
+# Now handling corners / lights / sectors
+corners_df = pd.read_csv(io.StringIO(circuit_info["corners"]), delim_whitespace=True)
+marshal_lights_df = pd.read_csv(io.StringIO(circuit_info["marshal_lights"]), delim_whitespace=True)
+marshal_sectors_df = pd.read_csv(io.StringIO(circuit_info["marshal_sectors"]), delim_whitespace=True)
 
-st.subheader(f"📍 Circuit: {circuit_info['Location']}")
-st.markdown(f"**Country:** {circuit_info['Country']}")
-st.markdown(f"**Length:** {circuit_info['Length']:.3f} m")  # Length usually in meters
-st.markdown(f"**Number of Turns:** {circuit_info['Turns']}")
+rotation = circuit_info["rotation"]
 
 # === CIRCUIT ANIMATION === #
 st.subheader("📍 Silverstone Track Map")
