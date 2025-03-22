@@ -75,7 +75,7 @@ marshal_sectors_df = pd.read_csv(io.StringIO(circuit_info["marshal_sectors"]), d
 
 # === CIRCUIT ANIMATION === #
 st.subheader("📍 Silverstone Track Map")
-
+gp_name = "Silverstone"
 
 fig = go.Figure()
 
