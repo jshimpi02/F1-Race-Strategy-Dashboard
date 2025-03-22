@@ -12,6 +12,7 @@ import random
 import datetime
 import io
 
+
 # Set Streamlit page config
 st.set_page_config(page_title="🏎️ F1 Race Strategy Dashboard", layout="wide")
 
@@ -74,7 +75,47 @@ marshal_sectors_df = pd.read_csv(io.StringIO(circuit_info["marshal_sectors"]), d
 
 # === CIRCUIT ANIMATION === #
 st.subheader("📍 Silverstone Track Map")
-track_map = plotting.get_circuit_map(gp_name)
+
+
+fig = go.Figure()
+
+# Add circuit path
+fig.add_trace(go.Scatter(
+    x=corners_df['X'],
+    y=corners_df['Y'],
+    mode='lines+markers',
+    name='Track Path'
+))
+
+# Add marshal lights
+fig.add_trace(go.Scatter(
+    x=marshal_lights_df['X'],
+    y=marshal_lights_df['Y'],
+    mode='markers',
+    marker=dict(size=10, color='yellow'),
+    name='Marshal Lights'
+))
+
+# Add marshal sectors
+fig.add_trace(go.Scatter(
+    x=marshal_sectors_df['X'],
+    y=marshal_sectors_df['Y'],
+    mode='markers',
+    marker=dict(size=10, color='red'),
+    name='Marshal Sectors'
+))
+
+fig.update_layout(
+    template='plotly_dark',
+    title=f"Circuit Layout: {gp_name}",
+    xaxis_title='X',
+    yaxis_title='Y',
+    showlegend=True,
+    height=600
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
 
 fig_track = go.Figure()
 
